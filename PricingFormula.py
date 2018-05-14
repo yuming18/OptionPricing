@@ -20,6 +20,11 @@ def NormalCDF(x):
     else:
        return NormalCDF(-x)
 
+def PrintTree(tree):
+    for i in range(len(tree)):
+        print tree[i]
+        print len(tree[i])
+
 def d1(S,K,r,q,sigma,T):
     return (np.log(S/float(K))+(r-q+(sigma**2)/2.0)*T) / (sigma*(T**0.5))
 
@@ -49,6 +54,106 @@ def CRR_EuroCall(S,K,r,q,sigma,T,n):
         for b in range(len(option)-1):
             option[b] = np.exp(-1*r*t) * (rnp * option[b] + (1-rnp) * option[b+1])
     return option[0]
+
+def CRR_EuroPut(S,K,r,q,sigma,T,n):
+    t = T/float(n)
+    u = np.exp(sigma*np.sqrt(t))
+    d = 1/u
+    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
+    stock = []
+    for a in range(n+1):
+        stock.append(S*np.float_power(u,n-a)*np.float_power(d,a))
+    option = [K-x if K>x else 0 for x in stock]
+    for a in range(n):
+        for b in range(len(option)-1):
+            option[b] = np.exp(-1*r*t) * (rnp * option[b] + (1-rnp) * option[b+1])
+    return option[0]
+
+def CRR_AmerCall(S,K,r,q,sigma,T,n):
+    t = T/float(n)
+    u = np.exp(sigma*np.sqrt(t))
+    d = 1/u
+    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
+    option = list()
+    tmp = list()
+
+    for a in range(n+1):
+        tmp.append(max(S*np.float_power(u,n-a)*np.float_power(d,a)-K,0))
+    option.append(tmp)
+
+    for a in range(n):
+        tmp = []
+        for b in range(len(option[a])-1):
+            EV = S*np.float_power(u,n-b-a-1)*np.float_power(d,b) - K
+            HV = np.exp(-1*r*t)*(rnp*option[a][b]+(1-rnp)*option[a][b+1])
+            tmp.append(max(EV,HV))
+        option.append(tmp)
+
+    return option[-1][0]
+
+def CRR_AmerPut(S,K,r,q,sigma,T,n):
+    t = T/float(n)
+    u = np.exp(sigma*np.sqrt(t))
+    d = 1/u
+    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
+    option = list()
+    tmp = list()
+
+    for a in range(n+1):
+        tmp.append(max(K-S*np.float_power(u,n-a)*np.float_power(d,a),0))
+    option.append(tmp)
+
+    for a in range(n):
+        tmp = []
+        for b in range(len(option[a])-1):
+            EV = K - S*np.float_power(u,n-b-a-1)*np.float_power(d,b)
+            HV = np.exp(-1*r*t)*(rnp*option[a][b]+(1-rnp)*option[a][b+1])
+            tmp.append(max(EV,HV))
+        option.append(tmp)
+
+    return option[-1][0]
+
+def MonteCarlo_EuroCall(S,K,r,q,sigma,T,SimulationNo,RepetitionTime):
+    average = list()
+
+    for a in range(RepetitionTime):
+        option = list()
+        # Normal parameter
+        mean = np.log(S)+(r-q-(sigma**2/2.0))*T
+        std = sigma*np.sqrt(T)
+        stock = np.random.normal(mean, std, SimulationNo)
+        stock = [np.exp(x) for x in stock]
+
+        option = [p-K if p>K else 0 for p in stock]
+
+        option = np.array(option)
+        average.append(np.average(option))
+
+    U = np.average(average) + 2*np.std(average)
+    L = np.average(average) - 2*np.std(average)
+
+    return np.average(average), U, L
+
+def MonteCarlo_EuroPut(S,K,r,q,sigma,T,SimulationNo,RepetitionTime):
+    average = list()
+
+    for a in range(RepetitionTime):
+        option = list()
+        # Normal parameter
+        mean = np.log(S)+(r-q-(sigma**2/2.0))*T
+        std = sigma*np.sqrt(T)
+        stock = np.random.normal(mean, std, SimulationNo)
+        stock = [np.exp(x) for x in stock]
+
+        option = [K-s if K-s else 0 for s in stock]
+
+        option = np.array(option)
+        average.append(np.average(option))
+
+    U = np.average(average) + 2*np.std(average)
+    L = np.average(average) - 2*np.std(average)
+
+    return np.average(average), U, L
 
 # Principle of Financial Calculation hw1
 def CallOnCall(S,K1,K2,r,q,sigma,t,T):
@@ -641,12 +746,10 @@ def LEIS_EuroCall(S,K,r,q,sigma,T,n):
             option[b] = np.exp(-1*r*t) * (rnp * option[b] + (1-rnp) * option[b+1])
     return option[0]
     
-
 def HZ_EuroCall(S,K,r,q,sigma,T,n):
     
     def integrate(K,a,b,N):
         x = np.linspace(a+(b-a)/(2*N), b-(b-a)/(2*N), N)
-#        x = np.linspace(a, b, N)
         y = list()
         for ele in x:
             y.append(max(ele-K,0.0))
@@ -674,3 +777,136 @@ def HZ_EuroCall(S,K,r,q,sigma,T,n):
             option[b] = np.exp(-1*r*t) * (rnp * option[b] + (1-rnp) * option[b+1])
     return option[0]
 
+def Combinatorial_VanillaEuroOption(S,K,r,q,sigma,T,n):
+    def LogC(n,j):
+        a = 0
+        b = 0
+        c = 0
+        for i in range(n):
+            a = a + np.log(i+1)
+        for i in range(j):
+            c = c + np.log(i+1)
+        for i in range(n-j):
+            b = b + np.log(i+1)
+        return a - b - c
+    t = T/float(n)
+    u = np.exp(sigma*np.sqrt(t))
+    d = 1/u
+    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
+
+    call = 0
+    put = 0
+    
+    for a in range(n+1):
+        call = call + np.exp(LogC(n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(S*np.float_power(u,n-a)*np.float_power(d,a)-K,0)
+        put = put + np.exp(LogC(n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(K-S*np.float_power(u,n-a)*np.float_power(d,a),0)
+    call = np.exp(-1*r*T)*call
+    put = np.exp(-1*r*T)*put
+
+    return call, put
+
+# Principle of Financial Calculation hw5
+def AsianCall(S,K,r,q,sigma,T,n,m):
+    t = T/float(n)
+    u = np.exp(sigma*np.sqrt(t))
+    d = 1/u
+    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
+
+    stock = []
+    savg = list()
+    option = list()
+
+    for a in range(n+1):
+        tmp = []
+        for b in range(a+1):
+            tmp.append(S*np.float_power(u,a-b)*np.float_power(d,b))
+        stock.append(tmp)
+    print "========== Stock Price Tree =========="
+#    print np.array(stock)
+    PrintTree(stock)
+#    exit()
+
+    for a in range(n+1):
+        tmp2 = []
+        for b in range(a+1):
+            print "a =", a
+            print "b =", b
+            if a == 0:
+                avg = [stock[a][b]]*m
+            else:
+                if b == 0:
+                    avg = [(stock[a][b] + savg[-1][b][0]*a)/(a+1)]*m
+                elif b == a:
+                    avg = [(stock[a][b] + savg[-1][b-1][0]*a)/(a+1)]*m
+                else:
+                    up = (max(savg[-1][b-1])*a + stock[a][b])/(a+1)
+                    down = (min(savg[-1][b])*a + stock[a][b])/(a+1)
+                    avg = (list(np.linspace(down, up, m)))
+#                    print up
+#                    print down
+            print avg
+            tmp2.append(avg)
+#        print tmp2
+        savg.append(tmp2)
+    print "========== Average Price Tree =========="
+#    print savg
+    PrintTree(savg)   
+#    exit()
+
+    tmp = []
+    for a in range(n+1):
+        tmp2 = [max(savg[-1][a][i]-K,0) for i in range(m)]
+        tmp.append(tmp2)
+    option.append(tmp)
+    print "========== Option Tree =========="
+#    print option
+    PrintTree(option[0])    
+
+    for a in range(n):
+        tmp2 = []
+        print "a=", a
+        for b in range(n-a):
+            print "b=", b
+            tmp = []
+            for i in range(m):
+                cu = 0
+                cd = 0
+                upprice = (savg[n-a-1][b][i] * (n-a) + stock[n-a][b])/(n-a+1)
+                for j in range(m-1):
+                    if (savg[n-a][b][j+1] > upprice and upprice > savg[n-a][b][j]) or (upprice == savg[n-a][b][j]):
+                        uidx = j
+                        if upprice == savg[n-a][b][j]:
+                            cu = option[a][b][uidx]
+                        else:
+                            cu = (option[a][b][uidx+1] - option[a][b][uidx])*((upprice-savg[n-a][b][uidx])/(savg[n-a][b][uidx+1]-savg[n-a][b][uidx])) + option[a][b][uidx]
+#                            print option[a][b][uidx+1]
+#                            print option[a][b][uidx]
+#                            print upprice
+#                            print savg[n-a][b][uidx]
+#                            print savg[n-a][b][uidx+1]
+#                            print savg[n-a][b][uidx]
+#                            print option[a][b][uidx]
+#                            print cu
+                        break
+                lowprice = (savg[n-a-1][b][i] * (n-a) + stock[n-a][b+1])/(n-a+1)
+                for k in range(m-1):
+                    if (savg[n-a][b+1][k+1] > lowprice and lowprice > savg[n-a][b+1][k]) or (lowprice == savg[n-a][b+1][k+1]):
+                        didx = k
+                        if lowprice == savg[n-a][b+1][k+1]:
+                            cd = option[a][b+1][didx+1]
+                        else:
+                            cd = (option[a][b+1][didx+1] - option[a][b+1][didx])*((lowprice-savg[n-a][b+1][didx])/(savg[n-a][b+1][didx+1]-savg[n-a][b+1][didx])) + option[a][b+1][didx]
+                        break
+#                print "Upprice:", upprice
+#                print "Upidx", savg[n-a][b][uidx]
+#                print "Lowprice:", lowprice
+#                print "Lowidx:", savg[n-a][b+1][didx+1]
+#                print "Cu:", cu
+#                print "Cd:", cd
+#                print "-----------------------"
+                tmp.append(np.exp(-r*t)*(rnp*cu+(1-rnp)*cd))
+            print tmp
+            print "=========="
+            tmp2.append(tmp)
+        option.append(tmp2)
+    return option[-1][0][0]
