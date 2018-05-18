@@ -3,6 +3,7 @@ import math
 from scipy.stats import norm, mvn, multivariate_normal
 import numpy as np
 import numpy.linalg as la
+from tqdm import tqdm
 
 def RMSE(true, price):
     s = 0
@@ -20,22 +21,32 @@ def NormalCDF(x):
     else:
        return NormalCDF(-x)
 
-def LogC(n,j):
-    a = 0
-    b = 0
-    c = 0
-    for i in range(n):
-        a = a + np.log(i+1)
-    for i in range(j):
-        c = c + np.log(i+1)
-    for i in range(n-j):
-        b = b + np.log(i+1)
-    return a - b - c
-
 def PrintTree(tree):
     for i in range(len(tree)):
         print len(tree[i])
         print tree[i]
+
+def CholeskyDecomposition(cov,count):
+    # Cholesky Decomposition
+    cholesky = np.zeros((count,count))
+    cholesky[0][0] = np.sqrt(cov[0][0])
+    for i in range(1,count):
+        cholesky[0][i] = cov[0][i]/cholesky[0][0]
+    for i in range(1,count-1):
+        tmp = 0
+        tmp2 = 0
+        for j in range(i):
+            tmp = tmp + cholesky[j][i]**2
+        cholesky[i][i] = np.sqrt(cov[i][i]-tmp)
+        for j in range(i+1,count):
+            for k in range(i):
+                tmp2 = tmp2 + cholesky[k][i]*cholesky[k][j]
+            cholesky[i][j] = (cov[i][j] - tmp2)/cholesky[i][i]
+    tmp = 0
+    for i in range(count-1):
+        tmp = tmp + cholesky[i][-1]**2
+    cholesky[-1][-1] = np.sqrt(cov[-1][-1]-tmp)
+    return cholesky
 
 def d1(S,K,r,q,sigma,T):
     return (np.log(S/float(K))+(r-q+(sigma**2)/2.0)*T) / (sigma*(T**0.5))
@@ -57,13 +68,14 @@ def CRR_EuroCall(S,K,r,q,sigma,T,n):
     t = T/float(n)
     u = np.exp(sigma*np.sqrt(t))
     d = 1/u
-    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
+    rnp = (np.exp((r-q)*t) - d)/(u-d) # Risk Netural Probability
     call = list()
     for a in range(n+1):
         call.append(max(S*np.float_power(u,n-a)*np.float_power(d,a)-K,0))
         
+#    for a in tqdm(range(n)):
     for a in range(n):
-        for b in range(n):
+        for b in range(n-a):
             call[b] = np.exp(-1*r*t) * (rnp * call[b] + (1-rnp) * call[b+1])
     return call[0]
 
@@ -71,13 +83,13 @@ def CRR_EuroPut(S,K,r,q,sigma,T,n):
     t = T/float(n)
     u = np.exp(sigma*np.sqrt(t))
     d = 1/u
-    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
+    rnp = (np.exp((r-q)*t) - d)/(u-d) # Risk Netural Probability
     put = list()
     for a in range(n+1):
         put.append(max(K-S*np.float_power(u,n-a)*np.float_power(d,a),0))
         
     for a in range(n):
-        for b in range(n):
+        for b in range(n-a):
             put[b] = np.exp(-1*r*t) * (rnp * put[b] + (1-rnp) * put[b+1])
     return put[0]
 
@@ -85,7 +97,7 @@ def CRR_AmerCall(S,K,r,q,sigma,T,n):
     t = T/float(n)
     u = np.exp(sigma*np.sqrt(t))
     d = 1/u
-    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
+    rnp = (np.exp((r-q)*t) - d)/(u-d) # Risk Netural Probability
     option = list()
     tmp = list()
 
@@ -95,7 +107,7 @@ def CRR_AmerCall(S,K,r,q,sigma,T,n):
 
     for a in range(n):
         tmp = []
-        for b in range(len(option[a])-1):
+        for b in range(n-a):
             EV = S*np.float_power(u,n-b-a-1)*np.float_power(d,b) - K
             HV = np.exp(-1*r*t)*(rnp*option[a][b]+(1-rnp)*option[a][b+1])
             tmp.append(max(EV,HV))
@@ -107,7 +119,7 @@ def CRR_AmerPut(S,K,r,q,sigma,T,n):
     t = T/float(n)
     u = np.exp(sigma*np.sqrt(t))
     d = 1/u
-    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
+    rnp = (np.exp((r-q)*t) - d)/(u-d) # Risk Netural Probability
     option = list()
     tmp = list()
 
@@ -117,7 +129,7 @@ def CRR_AmerPut(S,K,r,q,sigma,T,n):
 
     for a in range(n):
         tmp = []
-        for b in range(len(option[a])-1):
+        for b in range(n-a):
             EV = K - S*np.float_power(u,n-b-a-1)*np.float_power(d,b)
             HV = np.exp(-1*r*t)*(rnp*option[a][b]+(1-rnp)*option[a][b+1])
             tmp.append(max(EV,HV))
@@ -793,17 +805,29 @@ def HZ_EuroCall(S,K,r,q,sigma,T,n):
 
 # Financial Computation hw2 bouns2
 def Combinatorial_VanillaEuroOption(S,K,r,q,sigma,T,n):
+    def f(a):
+        log = list() 
+        for i in range(a):
+            log.append(np.log(i+1))
+        return np.array(log)
+    def LogC(nf,n,j):
+        return np.sum(nf) - np.sum(nf[:j]) - np.sum(nf[:n-j])
+
     t = T/float(n)
     u = np.exp(sigma*np.sqrt(t))
     d = 1/u
-    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
+    rnp = (np.exp((r-q)*t) - d)/(u-d) # Risk Netural Probability
 
     call = 0
     put = 0
-    
+
+    # return n factorial list
+    nf = f(n)
+
     for a in range(n+1):
-        call = call + np.exp(LogC(n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(S*np.float_power(u,n-a)*np.float_power(d,a)-K,0)
-        put = put + np.exp(LogC(n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(K-S*np.float_power(u,n-a)*np.float_power(d,a),0)
+        call = call + np.exp(LogC(nf,n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(S*np.exp((n-a)*np.log(u)+a*np.log(d))-K,0)
+        put = put + np.exp(LogC(nf,n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(K-S*np.exp((n-a)*np.log(u)+a*np.log(d)),0)
+
     call = np.exp(-1*r*T)*call
     put = np.exp(-1*r*T)*put
 
@@ -846,7 +870,6 @@ def AsianCall(S,K,r,q,sigma,T,n,m):
         tmp = []
 
     for a in range(n+1):
-#        tmp2 = [max(savg[-1][a][i]-K,0) for i in range(m)]
         tmp.append([max(savg[-1][a][i]-K,0) for i in range(m)])
     option.append(tmp)
 
@@ -913,3 +936,54 @@ def SpreadOption(S1,S2,K,r,q1,q2,sigma1,sigma2,T,n,rho):
                 option[a][b] = np.exp(-r*t)*0.25*(option[a][b]+option[a+1][b]+option[a][b+1]+option[a+1][b+1])
 
     return option[0][0]
+
+# Financial Computation hw3
+def MaxRainbowOption(S,K,r,q,sigma,T,rho,flag=0,SimulationNo=10000,RepetitionTime=20):
+    average = list()
+    count = len(S)
+    cov = np.zeros((count,count))
+
+    for i in range(count):
+        cov[i][i] = sigma[i]**2 * T
+        for j in range(i+1,count):
+            cov[i][j] = rho[j+i-1] * sigma[i] * sigma[j] * T
+            cov[j][i] = cov[i][j]
+#    print cov, "\n"
+
+    cholesky = CholeskyDecomposition(cov,count)
+#    print cholesky, "\n"
+
+    for a in range(RepetitionTime):
+        option = []
+        tmp = []
+        # Normal parameter
+        for i in range(count):
+            if flag != 0:
+                tmp2 = np.random.normal(0, 1, SimulationNo//2)
+                tmp2 = np.append(tmp2, (-tmp2))
+                tmp2 = tmp2/np.std(tmp2)
+#                print np.mean(tmp2)
+#                print np.std(tmp2)
+            else:
+                tmp2 = np.random.normal(0, 1, SimulationNo)
+            tmp.append(tmp2)
+#        print np.cov(np.vstack(tmp)), "\n"  # print uncorrelated cov matrix
+        correlatedN = np.transpose(np.matmul(np.transpose(tmp),cholesky))
+#        print np.cov(np.vstack(correlatedS)), "\n"  # print correlated matrix
+        for i in range(count):
+            mean = np.log(S[i])+(r-q[i]-(sigma[i]**2/2.0))*T
+            correlatedN[i] = np.exp(correlatedN[i] + mean)
+
+        stock = zip(*correlatedN)
+        for i in range(count):
+            option.append(np.exp(-r*T)*max(max(stock[i])-K,0))
+
+        option = np.array(option)
+        average.append(np.average(option))
+
+    mid = np.average(average)
+    U = np.average(average) + 2*np.std(average)
+    L = np.average(average) - 2*np.std(average)
+
+    return mid, L, U
+
