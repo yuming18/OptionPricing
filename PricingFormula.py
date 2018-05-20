@@ -958,18 +958,21 @@ def MaxRainbowOption(S,K,r,q,sigma,T,rho,flag=0,SimulationNo=10000,RepetitionTim
         tmp = []
         # Normal parameter
         for i in range(count):
+            # Antithetic variance and moment matching
             if flag != 0:
                 tmp2 = np.random.normal(0, 1, SimulationNo//2)
                 tmp2 = np.append(tmp2, (-tmp2))
                 tmp2 = tmp2/np.std(tmp2)
-#                print np.mean(tmp2)
-#                print np.std(tmp2)
             else:
                 tmp2 = np.random.normal(0, 1, SimulationNo)
             tmp.append(tmp2)
-#        print np.cov(np.vstack(tmp)), "\n"  # print uncorrelated cov matrix
+#        print np.cov(tmp), "\n"  # print uncorrelated cov matrix
+        if flag == 2:
+            cholesky = np.matmul(la.inv(CholeskyDecomposition(np.cov(tmp),count)),cholesky)
+
+        
         correlatedN = np.transpose(np.matmul(np.transpose(tmp),cholesky))
-#        print np.cov(np.vstack(correlatedS)), "\n"  # print correlated matrix
+#        print np.cov(np.vstack(correlatedN)), "\n"  # print correlated matrix
         for i in range(count):
             mean = np.log(S[i])+(r-q[i]-(sigma[i]**2/2.0))*T
             correlatedN[i] = np.exp(correlatedN[i] + mean)
