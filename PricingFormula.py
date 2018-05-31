@@ -960,7 +960,6 @@ def MaxRainbowOption(S,K,r,q,sigma,T,rho,flag=0,SimulationNo=10000,RepetitionTim
         if flag == 2:
             cholesky = np.matmul(la.inv(CholeskyDecomposition(np.cov(tmp),count)),cholesky)
 
-        
         correlatedN = np.transpose(np.matmul(np.transpose(tmp),cholesky))
 #        print np.cov(np.vstack(correlatedN)), "\n"  # print correlated matrix
         for i in range(count):
@@ -983,19 +982,27 @@ def MaxRainbowOption(S,K,r,q,sigma,T,rho,flag=0,SimulationNo=10000,RepetitionTim
 
 def LookbackEuroPutMonteCarlo(S,Smax,r,q,sigma,T,n,SimulationNo=10000,RepetitionTime=20):
 
+    option = list()
+
     t = T/n
-    st = np.array([[np.log(S)]*SimulationNo]).transpose()
-#    s0 = S
+
     for a in range(RepetitionTime):
-        for b in range(SimulationNo):
-            for c in range(n):
-                mean = np.log(st[b][-1])+(r-q-0.5*sigma**2)*t
-                s = np.random.normal(mean,sigma*np.sqrt(t),1)
-                print st[b]
-                print s
-                tmp = np.concatenate((st[b],s))
-                print tmp
-                exit()
+        st = (np.zeros(SimulationNo)+np.log(S)).reshape(SimulationNo,1)
+        dw = np.sqrt(t)*np.random.randn(SimulationNo,n)
+        for b in range(n):
+#            print st[:,-1].reshape(SimulationNo,1)
+            st = np.concatenate((st,st[:,-1].reshape(SimulationNo,1)+(r-q-0.5*sigma**2)/t+sigma*dw[:,b].reshape(SimulationNo,1)),axis=1)
+#            print st
+            
+        st = np.exp(st)
+        path_max = np.apply_along_axis(np.max,1,st)
+        option.append(np.average(path_max - st[:,-1]))
+
+    mid = np.average(option)
+    U = mid + 2 * np.std(option)
+    L = mid - 2 * np.std(option)
+
+    return mid, L, U
 
 
 
