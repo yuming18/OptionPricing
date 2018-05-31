@@ -6,11 +6,10 @@ import numpy.linalg as la
 from tqdm import tqdm
 
 def RMSE(true, price):
-    s = 0
-    for i in range(len(price)):
-        s = s + (price[i]-true[i])**2
-    rmse = s/float(len(price))
-    return rmse**0.5
+    true = np.array(true)
+    price = np.array(price)
+    n = len(price)
+    return np.sqrt(np.sum((price-ture)**2)/n)
 
 def NormalCDF(x):
     if x > 0:
@@ -30,22 +29,13 @@ def CholeskyDecomposition(cov,count):
     # Cholesky Decomposition
     cholesky = np.zeros((count,count))
     cholesky[0][0] = np.sqrt(cov[0][0])
-    for i in range(1,count):
-        cholesky[0][i] = cov[0][i]/cholesky[0][0]
+    cholesky[0,1:] = cov[0][1:]/cholesky[0,0]
     for i in range(1,count-1):
-        tmp = 0
         tmp2 = 0
-        for j in range(i):
-            tmp = tmp + cholesky[j][i]**2
-        cholesky[i][i] = np.sqrt(cov[i][i]-tmp)
+        cholesky[i,i] = np.sqrt(cov[i,i]-np.sum(cholesky[:i,i]**2))
         for j in range(i+1,count):
-            for k in range(i):
-                tmp2 = tmp2 + cholesky[k][i]*cholesky[k][j]
-            cholesky[i][j] = (cov[i][j] - tmp2)/cholesky[i][i]
-    tmp = 0
-    for i in range(count-1):
-        tmp = tmp + cholesky[i][-1]**2
-    cholesky[-1][-1] = np.sqrt(cov[-1][-1]-tmp)
+            cholesky[i,j] = (cov[i,j]-np.sum(cholesky[0:i,i]*cholesky[0:i,j]))/cholesky[i,i]
+    cholesky[-1][-1] = np.sqrt(cov[count-1][count-1]-np.sum(cholesky[:count-1,-1]**2))
     return cholesky
 
 def d1(S,K,r,q,sigma,T):
@@ -978,7 +968,8 @@ def MaxRainbowOption(S,K,r,q,sigma,T,rho,flag=0,SimulationNo=10000,RepetitionTim
             correlatedN[i] = np.exp(correlatedN[i] + mean)
 
         stock = zip(*correlatedN)
-        for i in range(count):
+
+        for i in range(SimulationNo):
             option.append(np.exp(-r*T)*max(max(stock[i])-K,0))
 
         option = np.array(option)
@@ -989,4 +980,24 @@ def MaxRainbowOption(S,K,r,q,sigma,T,rho,flag=0,SimulationNo=10000,RepetitionTim
     L = np.average(average) - 2*np.std(average)
 
     return mid, L, U
+
+def LookbackEuroPutMonteCarlo(S,Smax,r,q,sigma,T,n,SimulationNo=10000,RepetitionTime=20):
+
+    t = T/n
+    st = np.array([[np.log(S)]*SimulationNo]).transpose()
+#    s0 = S
+    for a in range(RepetitionTime):
+        for b in range(SimulationNo):
+            for c in range(n):
+                mean = np.log(st[b][-1])+(r-q-0.5*sigma**2)*t
+                s = np.random.normal(mean,sigma*np.sqrt(t),1)
+                print st[b]
+                print s
+                tmp = np.concatenate((st[b],s))
+                print tmp
+                exit()
+
+
+
+
 
