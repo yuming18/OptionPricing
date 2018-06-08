@@ -67,7 +67,6 @@ def BS_EuroPut(S,K,r,q,sigma,T):
     return K*np.exp(-r*T)*norm.cdf(-D2) - S * np.exp(-q*T) * norm.cdf(-D1)
 
 def Combinatorial_VanillaEuroOption(S,K,r,q,sigma,T,n):
-
     t = T/float(n)
     u = np.exp(sigma*np.sqrt(t))
     d = 1/u
@@ -75,7 +74,6 @@ def Combinatorial_VanillaEuroOption(S,K,r,q,sigma,T,n):
 
     call = 0
     put = 0
-
     # return n factorial list
     nf = f(n)
 
@@ -83,8 +81,8 @@ def Combinatorial_VanillaEuroOption(S,K,r,q,sigma,T,n):
         call = call + np.exp(LogC(nf,n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(S*np.exp((n-a)*np.log(u)+a*np.log(d))-K,0)
         put = put + np.exp(LogC(nf,n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(K-S*np.exp((n-a)*np.log(u)+a*np.log(d)),0)
 
-    call = np.exp(-1*r*T)*call
-    put = np.exp(-1*r*T)*put
+    call = np.exp(-r*T)*call
+    put = np.exp(-r*T)*put
 
     return call, put
 
@@ -1246,4 +1244,45 @@ def LeastSquareMethodMonteCarlo(S,K,r,q,sigma,T,n=3,SimulationNo=20000,stage=2):
 
     return option
 
- 
+def IVNewton(S,K,r,q,sigma,T,p,marketprice,sigmaLeft=0,sigmaRight=1,n=0):
+    vega = (S*(T**0.5)*norm.pdf(d1(S,K,r,q,sigma,T)))/100
+    return sigma - ((p-marketprice)/vega)*0.005, tmp, tmp2
+
+def IVBisection(S,K,r,q,sigma,T,p,marketprice,sigmaLeft=0,sigmaRight=1,n=0):
+    if p - marketprice > 0:
+        sigmaRight = sigma
+        sigmaLeft = sigmaLeft
+    else:
+        sigmaLeft = sigma
+        sigmaRight = sigmaRight
+#    print "Sigmaleft =", sigmaLeft, "Sigmaright =", sigmaRight
+    return (sigmaLeft+sigmaRight)/2, sigmaLeft, sigmaRight
+
+def BSImpliedVolitility(PriceFunction,SearchFunction,S,K,r,q,T,marketprice,error=10**-4):
+    sigma = 0.2
+    sigmaLeft = 0
+    sigmaRight = 1
+    p = PriceFunction(S,K,r,q,sigma,T)
+
+    while(abs(p-marketprice) > error):
+        tmp = sigma
+        sigma, sigmaLeft, sigmaRight = SearchFunction(S,K,r,q,sigma,T,p,marketprice,sigmaLeft,sigmaRight)
+        lastSigma = tmp
+        print "Simga =", sigma
+        p = PriceFunction(S,K,r,q,sigma,T)
+    return sigma
+
+def CRRImpliedVolitility(PriceFunction,SearchFunction,S,K,r,q,T,n,marketprice,error=10**-4):
+    sigma = 0.2
+    sigmaLeft = 0
+    sigmaRight = 1
+    p = PriceFunction(S,K,r,q,sigma,T,n)
+
+    while(abs(p-marketprice) > error):
+        tmp = sigma
+        sigma, sigmaLeft, sigmaRight = SearchFunction(S,K,r,q,sigma,T,p,marketprice,sigmaLeft,sigmaRight,n)
+        lastSigma = tmp
+        print "Simga =", sigma
+        p = PriceFunction(S,K,r,q,sigma,T,n)
+    return sigma
+
