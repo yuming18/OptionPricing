@@ -3,6 +3,7 @@ import math
 from scipy.stats import norm, mvn, multivariate_normal
 import numpy as np
 import numpy.linalg as la
+import copy
 from tqdm import tqdm
 
 # Some math, computation and output function
@@ -98,7 +99,7 @@ def CRR_EuroCall(S,K,r,q,sigma,T,n):
 
     for a in range(n+1):
         call = call + np.exp(Combination(Factorialn,n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(S*np.exp((n-a)*np.log(u)+a*np.log(d))-K,0)
-    call = np.exp(-r*T)
+    call = np.exp(-r*T)*call
 
     return call
 
@@ -1060,34 +1061,42 @@ def LookbackPutCRR(S,Smax,r,q,sigma,T,n,Amer=True,bonus=0):
 #    PrintTree(stock)
 
     # Max price tree
-    for a in range(n+1):
-        for b in range(a+1):
-            if a == 0:
-                node_maxprice = [Smax]
-            else:
-                if b == 0:
-                    node_maxprice = [max(Smax, stock[a][b])]
-                elif b == a:
+    if bonus == 1:
+        for a in range(n+1):
+            for b in range(a+1):
+                for c in range(a-b+1):
+                    tmp2.append(S*np.float_power(u,c))
+                tmp.append(tmp2)
+                tmp2 = []
+            maxprice.append(tmp)
+            tmp = []
+    else:
+        for a in range(n+1):
+            for b in range(a+1):
+                if a == 0:
                     node_maxprice = [Smax]
                 else:
-#                    node_maxprice = maxprice[-1][b-1] gives the pointer of a list to node_maxprice
-                    node_maxprice = maxprice[-1][b-1][:]
-                    for ele in maxprice[-1][b][:]:
-                        if(ele not in node_maxprice):
-                            node_maxprice.append(ele)
-                    # something wrong??
-#                    if min(node_maxprice) > stock[a][b]:
-#                        node_maxprice.append(stock[a][b])
-#                    node_maxprice.append(stock[a][b])
-            tmp.append(node_maxprice)
-        maxprice.append(tmp)
-        tmp = []
-#    PrintTree(maxprice)
+                    if b == 0:
+                        node_maxprice = [max(Smax, stock[a][b])]
+                    elif b == a:
+                        node_maxprice = [Smax]
+                    else:
+    #                    node_maxprice = maxprice[-1][b-1] gives the pointer of a list to node_maxprice
+                        node_maxprice = maxprice[-1][b-1][:]
+                        for ele in maxprice[-1][b][:]:
+                            if(ele not in node_maxprice):
+                                node_maxprice.append(ele)
+                        # something wrong??
+    #                    if min(node_maxprice) > stock[a][b]:
+    #                        node_maxprice.append(stock[a][b])
+    #                    node_maxprice.append(stock[a][b])
+                tmp.append(node_maxprice)
+            maxprice.append(tmp)
+            tmp = []
 
     for a in range(n+1):
         tmp.append([max(ele-stock[-1][a],0) for ele in maxprice[-1][a]])
     option.append(tmp)
-#    print option
 
     tmp = []
     for a in range(n):
@@ -1124,7 +1133,7 @@ def CheukVorst1997(S,Smax,r,q,sigma,T,n,Amer=True):
     rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
     mu = np.exp(r*t)
 #    q = (rnp*u)/(rnp*u+(1-rnp)*d)
-    q = (mu*u-1)/(mu*(u-d)) # CV1997 risk neutral prob.
+    q = 1 - (mu*u-1)/(mu*(u-d)) # CV1997 risk neutral prob.
 
     tmp = list()
     stock = [[1]]
@@ -1136,27 +1145,25 @@ def CheukVorst1997(S,Smax,r,q,sigma,T,n,Amer=True):
             tmp.append(np.float_power(u,a-b))
         stock.append(tmp)
         tmp = []
-#    PrintTree(stock)
 
     option.append([max(ele-1,0) for ele in stock[-1][:]])
-#    print option
 
     for a in range(n):
         tmp = []
         for b in range(n-a):
             if b == (n-a-1):
-                tmp.append(np.exp(-r*t)*(q*option[-1][b]+(1-q)*option[-1][b+1]))
+                tmp.append((q*option[-1][b]+(1-q)*option[-1][b+1]))
             else:
                 if Amer:
-                    tmp.append(max(np.exp(-r*t)*(q*option[-1][b]+(1-q)*option[-1][b+2]),stock[n-a-1][b]-1))
+                    tmp.append(max((q*option[-1][b]+(1-q)*option[-1][b+2]),stock[n-a-1][b]-1))
                 else:
-                    tmp.append(np.exp(-r*t)*(q*option[-1][b]+(1-q)*option[-1][b+2]))
+                    tmp.append((q*option[-1][b]+(1-q)*option[-1][b+2]))
 
         option.append(tmp)
-    PrintTree(option)
 
     return option[-1][0]*S
 
+# Principle of financial computation hw7
 def LeastSquareMethodMonteCarlo(S,K,r,q,sigma,T,n=3,SimulationNo=20000,stage=2):
     def V(X,Y):
         XX = np.matmul(X.T,X)
@@ -1255,7 +1262,6 @@ def IVBisection(S,K,r,q,sigma,T,p,marketprice,sigmaLeft=0,sigmaRight=1,n=0):
     else:
         sigmaLeft = sigma
         sigmaRight = sigmaRight
-#    print "Sigmaleft =", sigmaLeft, "Sigmaright =", sigmaRight
     return (sigmaLeft+sigmaRight)/2, sigmaLeft, sigmaRight
 
 def BSImpliedVolitility(PriceFunction,SearchFunction,S,K,r,q,T,marketprice,error=10**-4):
@@ -1285,4 +1291,53 @@ def CRRImpliedVolitility(PriceFunction,SearchFunction,S,K,r,q,T,n,marketprice,er
         print "Simga =", sigma
         p = PriceFunction(S,K,r,q,sigma,T,n)
     return sigma
+
+# FC bonus2
+def ImplicitFiniteDifference(S,K,r,q,sigma,T,Smin,Smax,m,n,Amer=False,Call=True):
+    t = T/n
+    W = np.zeros((m-1,m+1))
+    option = np.zeros((m+1,n+1))
+
+    stock = np.linspace(Smin,Smax,m+1)
+#    print stock
+    sindex = list(stock).index(S)
+#    print sindex
+
+    for i in range(m+1):
+        for j in range(n+1):
+            if i == 0:
+                option[i,j] = K*np.exp(-r*(n-j)*t) - stock[i]*np.exp(-q*(n-j)*t)
+            elif i == m:
+                option[i,j] = 0
+            if j == n:
+                option[i,j] = max(K - stock[i],0)
+#    print option
+    # W
+    for j in range(m-1):
+        a = (r-q)*0.5*(j+1)*t-0.5*((sigma*(j+1))**2)*t
+        b  = 1 + (((sigma*(j+1))**2)+r)*t
+        c = -(r-q)*0.5*(j+1)*t-0.5*(sigma*(j+1))**2*t
+        W[j,j] = a
+        W[j,j+1] = b 
+        W[j,j+2] = c
+#    print W
+    inputW = np.delete(W,0,1)
+    inputW = np.delete(inputW,-1,1)
+
+    for i in range(n):
+        Y = copy.copy(option[1:-1,-i-1].reshape(m-1,1))
+        Y[0,0] = Y[0,0] - W[0,0]*option[0,-i-2]
+        Y[-1,0] = Y[-1,0] - W[-1,-1]*option[-1,-i-2]
+        tmp = np.matmul(la.inv(inputW),Y)
+        for k in range(m-1):
+            if Amer:
+                option[k+1,n-i-1] = max(tmp[k,0],K-stock[k+1])
+            else:
+                option[k+1,n-i-1] = tmp[k,0]
+#    print option
+
+    return option[sindex,0]
+
+#def ExplicitFiniteDifference(S,K,r,q,sigma,T,Smin,Smax,m,n,Amer=False,Call=True):
+    
 
