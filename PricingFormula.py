@@ -1293,7 +1293,7 @@ def CRRImpliedVolitility(PriceFunction,SearchFunction,S,K,r,q,T,n,marketprice,er
     return sigma
 
 # FC bonus2
-def ImplicitFiniteDifference(S,K,r,q,sigma,T,Smin,Smax,m,n,Amer=False,Call=True):
+def ImplicitFiniteDifference(S,K,r,q,sigma,T,Smin,Smax,m,n,Amer,Put):
     t = T/n
     W = np.zeros((m-1,m+1))
     option = np.zeros((m+1,n+1))
@@ -1303,19 +1303,29 @@ def ImplicitFiniteDifference(S,K,r,q,sigma,T,Smin,Smax,m,n,Amer=False,Call=True)
     sindex = list(stock).index(S)
 #    print sindex
 
-    for i in range(m+1):
-        for j in range(n+1):
-            if i == 0:
-                option[i,j] = K*np.exp(-r*(n-j)*t) - stock[i]*np.exp(-q*(n-j)*t)
-            elif i == m:
-                option[i,j] = 0
-            if j == n:
-                option[i,j] = max(K - stock[i],0)
+    if Put:
+        for i in range(m+1):
+            for j in range(n+1):
+                if i == 0:
+                    option[i,j] = K*np.exp(-r*(n-j)*t) - stock[i]*np.exp(-q*(n-j)*t)
+                elif i == m:
+                    option[i,j] = 0
+                if j == n:
+                    option[i,j] = max(K - stock[i],0)
+    else:
+        for i in range(m+1):
+            for j in range(n+1):
+                if i == 0:
+                    option[i,j] = 0
+                elif i == m:
+                    option[i,j] = stock[i]*np.exp(-q*(n-j)*t) - K*np.exp(-r*(n-j)*t)
+                if j == n:
+                    option[i,j] = max(stock[i]-K,0)
 #    print option
     # W
     for j in range(m-1):
         a = (r-q)*0.5*(j+1)*t-0.5*((sigma*(j+1))**2)*t
-        b  = 1 + (((sigma*(j+1))**2)+r)*t
+        b = 1 + (((sigma*(j+1))**2)+r)*t
         c = -(r-q)*0.5*(j+1)*t-0.5*(sigma*(j+1))**2*t
         W[j,j] = a
         W[j,j+1] = b 
@@ -1331,13 +1341,67 @@ def ImplicitFiniteDifference(S,K,r,q,sigma,T,Smin,Smax,m,n,Amer=False,Call=True)
         tmp = np.matmul(la.inv(inputW),Y)
         for k in range(m-1):
             if Amer:
-                option[k+1,n-i-1] = max(tmp[k,0],K-stock[k+1])
+                if Put:
+                    option[k+1,n-i-1] = max(tmp[k,0],K-stock[k+1])
+                else:
+                    option[k+1,n-i-1] = max(tmp[k,0],stock[k+1]-K)
             else:
                 option[k+1,n-i-1] = tmp[k,0]
 #    print option
 
     return option[sindex,0]
 
-#def ExplicitFiniteDifference(S,K,r,q,sigma,T,Smin,Smax,m,n,Amer=False,Call=True):
-    
+def ExplicitFiniteDifference(S,K,r,q,sigma,T,Smin,Smax,m,n,Amer,Put):
+    t = T/n
+    W = np.zeros((m-1,m+1))
+    option = np.zeros((m+1,n+1))
 
+    stock = np.linspace(Smin,Smax,m+1)
+#    print stock
+    sindex = list(stock).index(S)
+#    print sindex
+
+    if Put:
+        for i in range(m+1):
+            for j in range(n+1):
+                if i == 0:
+                    option[i,j] = K*np.exp(-r*(n-j)*t) - stock[i]*np.exp(-q*(n-j)*t)
+                elif i == m:
+                    option[i,j] = 0
+                if j == n:
+                    option[i,j] = max(K - stock[i],0)
+    else:
+        for i in range(m+1):
+            for j in range(n+1):
+                if i == 0:
+                    option[i,j] = 0
+                elif i == m:
+                    option[i,j] = stock[i]*np.exp(-q*(n-j)*t) - K*np.exp(-r*(n-j)*t)
+                if j == n:
+                    option[i,j] = max(stock[i]-K,0)
+#    print option
+    # W
+    for j in range(m-1):
+        a = (-0.5*(r-q)*(j+1)*t+0.5*((sigma*(j+1))**2)*t)/(1+r*t)
+        b = (1-((sigma*(j+1))**2)*t)/(1+r*t)
+        c = (0.5*(r-q)*(j+1)*t+0.5*((sigma*(j+1))**2)*t)/(1+r*t)
+        W[j,j] = a
+        W[j,j+1] = b 
+        W[j,j+2] = c
+#    print W
+
+    inputW = W
+
+    for i in range(n):
+        Y = copy.copy(option[:,-i-1].reshape(m+1,1))
+        tmp = np.matmul(inputW,Y)
+        for k in range(m-1):
+            if Amer:
+                if Put:
+                    option[k+1,n-i-1] = max(tmp[k,0],K-stock[k+1])
+                else:
+                    option[k+1,n-i-1] = max(tmp[k,0],stock[k+1]-K)
+            else:
+                option[k+1,n-i-1] = tmp[k,0]
+#    print option
+    return option[sindex,0]
