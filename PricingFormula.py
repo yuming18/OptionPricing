@@ -206,6 +206,35 @@ def MonteCarlo_EuroPut(S,K,r,q,sigma,T,SimulationNo=10000,RepetitionTime=20):
 
     return mid, L, U
 
+# FC hw5 basic
+def MonteCarlo_AverEuroCall(S,K,r,q,sigma,t,T,n,Savgt,SimulationNo=10000,RepetitionTime=20):
+
+    option = list()
+    dt = (T-t)/n
+
+    for a in range(RepetitionTime):
+        st = (np.zeros(SimulationNo)+np.log(S)).reshape(SimulationNo,1)
+        dw = np.sqrt(dt)*np.random.randn(SimulationNo,n)
+        for b in range(n):
+            st = np.concatenate((st,st[:,-1].reshape(SimulationNo,1)+(r-q-0.5*sigma**2)*t+sigma*dw[:,b].reshape(SimulationNo,1)),axis=1)
+#            print st
+        st = np.exp(st)
+#        print st
+
+        avglist = list()
+        for row in st:
+            rowavg = ((Savgt*t)+np.average(row)*(T-t))/T
+            avglist.append(rowavg)
+        avglist = np.array(avglist).reshape(SimulationNo,1)
+
+        option.append(np.average(np.exp(-r*T)*np.maximum(avglist - K,0)))
+
+    mid = np.average(option)
+    L = mid - 2 * np.std(option)
+    U = mid + 2 * np.std(option)
+
+    return mid, L, U
+
 # Principle of Financial Calculation hw1
 def CallOnCall(S,K1,K2,r,q,sigma,t,T):
 
@@ -723,7 +752,7 @@ def BBS_EuroCall(S,K,r,q,sigma,T,n):
     t = T/n
     u = np.exp(sigma*np.sqrt(t))
     d = 1/u
-    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
+    rnp = (np.exp((r-q)*t) - d)/(u-d) # Risk Netural Probability
     leef = []
     option = []
     for a in range(n):
@@ -744,7 +773,7 @@ def EFB_EuroCall(S,K,r,q,sigma,T,n): #Extrapolated Flexible Binomial
 
     u = np.exp(sigma*np.sqrt(t)+lam*(sigma**2)*t)
     d = np.exp(-sigma*np.sqrt(t)+lam*(sigma**2)*t)
-    rnp = (np.exp(r*t) - d)/(u-d)
+    rnp = (np.exp((r-q)*t) - d)/(u-d)
 #    print S*np.float_power(u,ita)*np.float_power(d,n-ita)
 
     stock = []
@@ -764,7 +793,7 @@ def GCRRXPC_EuroCall(S,K,r,q,sigma,T,n):
 
     u = np.exp(lam*sigma*np.sqrt(t))
     d = np.exp((-sigma*np.sqrt(t))/lam)
-    rnp = (np.exp(r*t) - d)/(u-d)
+    rnp = (np.exp((r-q)*t) - d)/(u-d)
 
     stock = []
     option = []
@@ -785,7 +814,7 @@ def LEIS_EuroCall(S,K,r,q,sigma,T,n):
     u = (np.exp(r*t)*p1)/p2
     d = (np.exp(r*t)-p2*u)/(1-p2)
 
-    rnp = (np.exp(r*t) - d)/(u-d)
+    rnp = (np.exp((r-q)*t) - d)/(u-d)
     stock = []
     option = []
     for a in range(n+1):
@@ -827,44 +856,14 @@ def HZ_EuroCall(S,K,r,q,sigma,T,n):
             option[b] = np.exp(-1*r*t) * (rnp * option[b] + (1-rnp) * option[b+1])
     return option[0]
 
-# Financial Computation hw2 bouns2
-def Combinatorial_VanillaEuroOption(S,K,r,q,sigma,T,n):
-    def f(a):
-        log = list() 
-        for i in range(a):
-            log.append(np.log(i+1))
-        return np.array(log)
-    def LogC(nf,n,j):
-        return np.sum(nf) - np.sum(nf[:j]) - np.sum(nf[:n-j])
-
-    t = T/float(n)
-    u = np.exp(sigma*np.sqrt(t))
-    d = 1/u
-    rnp = (np.exp((r-q)*t) - d)/(u-d) # Risk Netural Probability
-
-    call = 0
-    put = 0
-
-    # return n factorial list
-    nf = f(n)
-
-    for a in range(n+1):
-        call = call + np.exp(LogC(nf,n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(S*np.exp((n-a)*np.log(u)+a*np.log(d))-K,0)
-        put = put + np.exp(LogC(nf,n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(K-S*np.exp((n-a)*np.log(u)+a*np.log(d)),0)
-
-    call = np.exp(-1*r*T)*call
-    put = np.exp(-1*r*T)*put
-
-    return call, put
-
 # Principle of Financial Calculation hw5
-def AsianCall(S,K,r,q,sigma,T,n,m):
-    t = T/float(n)
-    u = np.exp(sigma*np.sqrt(t))
-    d = 1/u
-    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
+def AsianCall(S,K,r,q,sigma,t,T,n,m,Savgt,passingtime,Amer=False):
 
-    stock = []
+    dt = (T-t)/n
+    u = np.exp(sigma*np.sqrt(dt))
+    d = 1/u
+    rnp = (np.exp((r-q)*dt) - d)/(u-d) # Risk Netural Probability
+    stock = list()
     savg = list()
     option = list()
     tmp = list()
@@ -876,24 +875,27 @@ def AsianCall(S,K,r,q,sigma,T,n,m):
             tmp.append(S*np.float_power(u,a-b)*np.float_power(d,b))
         stock.append(tmp)
         tmp = []
+#    PrintTree(stock)
 
     # Average price tree
     for a in range(n+1):
         for b in range(a+1):
             if a == 0:
-                avg = [stock[a][b]]*m
+                avg = [Savgt]*m
             else:
                 if b == 0:
-                    avg = [(stock[a][b] + savg[-1][b][0]*a)/(a+1)]*m
+                    avg = [(stock[a][b] + savg[-1][b][0]*(passingtime+a))/(passingtime+a+1)]*m
                 elif b == a:
-                    avg = [(stock[a][b] + savg[-1][b-1][0]*a)/(a+1)]*m
+                    avg = [(stock[a][b] + savg[-1][b-1][0]*(passingtime+a))/(passingtime+a+1)]*m
                 else:
-                    up = (max(savg[-1][b-1])*a + stock[a][b])/(a+1)
-                    down = (min(savg[-1][b])*a + stock[a][b])/(a+1)
+                    up = (max(savg[-1][b-1])*(passingtime+a) + stock[a][b])/(passingtime+a+1)
+                    down = (min(savg[-1][b])*(passingtime+a) + stock[a][b])/(passingtime+a+1)
                     avg = list(np.linspace(down, up, m))
             tmp.append(avg)
         savg.append(tmp)
         tmp = []
+#    PrintTree(savg)
+
 
     # Option price tree
     for a in range(n+1):
@@ -924,7 +926,10 @@ def AsianCall(S,K,r,q,sigma,T,n,m):
                         else:
                             cd = (option[a][b+1][didx+1] - option[a][b+1][didx])*((lowprice-savg[n-a][b+1][didx])/(savg[n-a][b+1][didx+1]-savg[n-a][b+1][didx])) + option[a][b+1][didx]
                         break
-                tmp.append(max(np.exp(-r*t)*(rnp*cu+(1-rnp)*cd),savg[n-a-1][b][i]-K))
+                if Amer:
+                    tmp.append(max(np.exp(-r*dt)*(rnp*cu+(1-rnp)*cd),savg[n-a-1][b][i]-K))
+                else:
+                    tmp.append(np.exp(-r*dt)*(rnp*cu+(1-rnp)*cd))
             tmp2.append(tmp)
             tmp = []
         option.append(tmp2)
@@ -1020,7 +1025,6 @@ def MaxRainbowOption(S,K,r,q,sigma,T,rho,flag=0,SimulationNo=10000,RepetitionTim
 def LookbackEuroPutMonteCarlo(S,Smax,r,q,sigma,T,n,SimulationNo=10000,RepetitionTime=20):
 
     option = list()
-
     t = T/n
 
     for a in range(RepetitionTime):
@@ -1044,13 +1048,14 @@ def LookbackPutCRR(S,Smax,r,q,sigma,T,n,Amer=True,bonus=0):
     t = T/n
     u = np.exp(sigma*np.sqrt(t))
     d = 1/u
-    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
+    rnp = (np.exp((r-q)*t) - d)/(u-d) # Risk Netural Probability
 
     stock = list()
     maxprice = list()
     option = list()
     tmp = list()
     tmp2 = list()
+    sulist = list()
 
     # Stock price tree
     for a in range(n+1):
@@ -1062,10 +1067,12 @@ def LookbackPutCRR(S,Smax,r,q,sigma,T,n,Amer=True,bonus=0):
 
     # Max price tree
     if bonus == 1:
+#        sulist = [max(Smax,S*np.float_power(u,c)) for c in range(n+1)]
         for a in range(n+1):
             for b in range(a+1):
                 for c in range(a-b+1):
-                    tmp2.append(S*np.float_power(u,c))
+#                    tmp2 = sulist[:a-b]
+                    tmp2.append(max(Smax,S*np.float_power(u,c)))
                 tmp.append(tmp2)
                 tmp2 = []
             maxprice.append(tmp)
@@ -1126,11 +1133,11 @@ def LookbackPutCRR(S,Smax,r,q,sigma,T,n,Amer=True,bonus=0):
     
     return option[-1][0][0]
 
-def CheukVorst1997(S,Smax,r,q,sigma,T,n,Amer=True):
+def CheukVorst1997(S,Smax,r,q1,sigma,T,n,Amer=True):
     t = T/n
     u = np.exp(sigma*np.sqrt(t))
     d = 1/u
-    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
+#    rnp = (np.exp((r-q1)*t) - d)/(u-d) # Risk Netural Probability
     mu = np.exp(r*t)
 #    q = (rnp*u)/(rnp*u+(1-rnp)*d)
     q = 1 - (mu*u-1)/(mu*(u-d)) # CV1997 risk neutral prob.
@@ -1215,7 +1222,7 @@ def LeastSquareMethodMonteCarlo(S,K,r,q,sigma,T,n=3,SimulationNo=20000,stage=2):
         option = np.array(value).reshape(SimulationNo,1)
 
     Stage2Price = np.maximum(K-S,np.average(np.exp(-r*t)*option.flatten()))
-#    print Stage2Price
+    print "Stage2 price:", Stage2Price
 
     if stage == 3:
         st = (np.zeros(SimulationNo)+np.log(S)).reshape(SimulationNo,1)
@@ -1248,12 +1255,14 @@ def LeastSquareMethodMonteCarlo(S,K,r,q,sigma,T,n=3,SimulationNo=20000,stage=2):
             option = np.array(value).reshape(SimulationNo,1)
             
     option = np.maximum(K-S,np.average(np.exp(-r*t)*option.flatten()))
+    if stage == 3:
+        print "Stage3 price:", option
 
-    return option
+    return beta, option
 
 def IVNewton(S,K,r,q,sigma,T,p,marketprice,sigmaLeft=0,sigmaRight=1,n=0):
     vega = (S*(T**0.5)*norm.pdf(d1(S,K,r,q,sigma,T)))/100
-    return sigma - ((p-marketprice)/vega)*0.005, tmp, tmp2
+    return sigma - ((p-marketprice)/vega)*0.005, sigmaLeft, sigmaRight
 
 def IVBisection(S,K,r,q,sigma,T,p,marketprice,sigmaLeft=0,sigmaRight=1,n=0):
     if p - marketprice > 0:
@@ -1307,7 +1316,8 @@ def ImplicitFiniteDifference(S,K,r,q,sigma,T,Smin,Smax,m,n,Amer,Put):
         for i in range(m+1):
             for j in range(n+1):
                 if i == 0:
-                    option[i,j] = K*np.exp(-r*(n-j)*t) - stock[i]*np.exp(-q*(n-j)*t)
+#                    option[i,j] = K*np.exp(-r*(n-j)*t) - stock[i]*np.exp(-q*(n-j)*t)
+                    option[i,j] = K - stock[i]
                 elif i == m:
                     option[i,j] = 0
                 if j == n:
@@ -1318,7 +1328,8 @@ def ImplicitFiniteDifference(S,K,r,q,sigma,T,Smin,Smax,m,n,Amer,Put):
                 if i == 0:
                     option[i,j] = 0
                 elif i == m:
-                    option[i,j] = stock[i]*np.exp(-q*(n-j)*t) - K*np.exp(-r*(n-j)*t)
+#                    option[i,j] = stock[i]*np.exp(-q*(n-j)*t) - K*np.exp(-r*(n-j)*t)
+                    option[i,j] = stock[i] - K
                 if j == n:
                     option[i,j] = max(stock[i]-K,0)
 #    print option
@@ -1365,7 +1376,8 @@ def ExplicitFiniteDifference(S,K,r,q,sigma,T,Smin,Smax,m,n,Amer,Put):
         for i in range(m+1):
             for j in range(n+1):
                 if i == 0:
-                    option[i,j] = K*np.exp(-r*(n-j)*t) - stock[i]*np.exp(-q*(n-j)*t)
+#                    option[i,j] = K*np.exp(-r*(n-j)*t) - stock[i]*np.exp(-q*(n-j)*t)
+                    option[i,j] = K - stock[i]
                 elif i == m:
                     option[i,j] = 0
                 if j == n:
@@ -1376,7 +1388,8 @@ def ExplicitFiniteDifference(S,K,r,q,sigma,T,Smin,Smax,m,n,Amer,Put):
                 if i == 0:
                     option[i,j] = 0
                 elif i == m:
-                    option[i,j] = stock[i]*np.exp(-q*(n-j)*t) - K*np.exp(-r*(n-j)*t)
+#                    option[i,j] = stock[i]*np.exp(-q*(n-j)*t) - K*np.exp(-r*(n-j)*t)
+                    option[i,j] = stock[i]-K
                 if j == n:
                     option[i,j] = max(stock[i]-K,0)
 #    print option
