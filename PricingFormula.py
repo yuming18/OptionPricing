@@ -223,27 +223,28 @@ def MonteCarlo_EuroPut(S,K,r,q,sigma,T,SimulationNo=10000,RepetitionTime=20):
     return mid, L, U
 
 # FC hw5 basic
-def MonteCarlo_AverEuroCall(S,K,r,q,sigma,t,T,n,Savgt,SimulationNo=10000,RepetitionTime=20):
+def MonteCarlo_AverEuroCall(S,K,r,q,sigma,t,T,n,Savgt,passingtime=0,SimulationNo=10000,RepetitionTime=20):
 
     option = list()
     dt = (T-t)/n
+    passperiod = int(n*(t/(T-t)))+1
 
     for a in range(RepetitionTime):
         st = (np.zeros(SimulationNo)+np.log(S)).reshape(SimulationNo,1)
         dw = np.sqrt(dt)*np.random.randn(SimulationNo,n)
         for b in range(n):
-            st = np.concatenate((st,st[:,-1].reshape(SimulationNo,1)+(r-q-0.5*sigma**2)*t+sigma*dw[:,b].reshape(SimulationNo,1)),axis=1)
+            st = np.concatenate((st,st[:,-1].reshape(SimulationNo,1)+(r-q-0.5*sigma**2)*dt+sigma*dw[:,b].reshape(SimulationNo,1)),axis=1)
 #            print st
         st = np.exp(st)
 #        print st
 
         avglist = list()
         for row in st:
-            rowavg = ((Savgt*t)+np.average(row)*(T-t))/T
+            rowavg = (Savgt*passperiod+np.sum(row[1:]))/(passperiod+n)
             avglist.append(rowavg)
         avglist = np.array(avglist).reshape(SimulationNo,1)
 
-        option.append(np.average(np.exp(-r*T)*np.maximum(avglist - K,0)))
+        option.append(np.average(np.exp(-r*(T-t))*np.maximum(avglist - K,0)))
 
     mid = np.average(option)
     L = mid - 2 * np.std(option)
@@ -849,20 +850,19 @@ def HZ_EuroCall(S,K,r,q,sigma,T,n):
     return option[0]
 
 # Principle of Financial Calculation hw5
-def AsianCall(S,K,r,q,sigma,t,T,n,m,Savgt,passingtime,Amer=False):
-
-    dt = (T-t)/n
-    u = np.exp(sigma*np.sqrt(dt))
+def AsianCall(S,K,r,q,sigma,T,n,m,Amer=True):
+    t = T/n
+    u = np.exp(sigma*np.sqrt(t))
     d = 1/u
-    rnp = (np.exp((r-q)*dt) - d)/(u-d) # Risk Netural Probability
+    rnp = (np.exp((r-q)*t) - d)/(u-d) # Risk Netural Probability
+#    print u, d, rnp
 
-    stock = list()
+    stock = []
     savg = list()
     option = list()
     tmp = list()
     tmp2 = list()
 
-    # Stock price tree
     for a in range(n+1):
         for b in range(a+1):
             tmp.append(S*np.float_power(u,a-b)*np.float_power(d,b))
@@ -870,29 +870,32 @@ def AsianCall(S,K,r,q,sigma,t,T,n,m,Savgt,passingtime,Amer=False):
         tmp = []
 #    PrintTree(stock)
 
-    # Average price tree
     for a in range(n+1):
         for b in range(a+1):
             if a == 0:
-                avg = [Savgt]*m
+                avg = [stock[a][b]]*m
             else:
                 if b == 0:
-                    avg = [(stock[a][b] + savg[-1][b][0]*(passingtime+a))/(passingtime+a+1)]*m
+                    avg = [(stock[a][b] + savg[-1][b][0]*a)/(a+1)]*m
                 elif b == a:
-                    avg = [(stock[a][b] + savg[-1][b-1][0]*(passingtime+a))/(passingtime+a+1)]*m
+                    avg = [(stock[a][b] + savg[-1][b-1][0]*a)/(a+1)]*m
                 else:
-                    up = (max(savg[-1][b-1])*(passingtime+a) + stock[a][b])/(passingtime+a+1)
-                    down = (min(savg[-1][b])*(passingtime+a) + stock[a][b])/(passingtime+a+1)
-                    avg = list(np.linspace(down, up, m))
+                    up = (max(savg[-1][b-1])*a + stock[a][b])/(a+1)
+                    down = (min(savg[-1][b])*a + stock[a][b])/(a+1)
+                    # linear space
+                    # avg = list(np.linspace(down, up, m))
+
+                    # log space 
+                    avg = list(np.exp(np.linspace(np.log(down),np.log(up),m)))
             tmp.append(avg)
         savg.append(tmp)
         tmp = []
 #    PrintTree(savg)
 
-    # Option price tree
     for a in range(n+1):
         tmp.append([max(savg[-1][a][i]-K,0) for i in range(m)])
     option.append(tmp)
+#    PrintTree(option)
 
     tmp = []
     for a in range(n):
@@ -902,7 +905,7 @@ def AsianCall(S,K,r,q,sigma,t,T,n,m,Savgt,passingtime,Amer=False):
                 cd = 0
                 upprice = (savg[n-a-1][b][i] * (n-a) + stock[n-a][b])/(n-a+1)
                 for j in range(m-1):
-                    if (savg[n-a][b][j+1] > upprice and upprice > savg[n-a][b][j]) or (upprice == savg[n-a][b][j]):
+                    if (savg[n-a][b][j+1] > upprice and upprice > savg[n-a][b][j]) or (abs(upprice - savg[n-a][b][j]) < 10**-4):
                         uidx = j
                         if upprice == savg[n-a][b][j]:
                             cu = option[a][b][uidx]
@@ -911,7 +914,7 @@ def AsianCall(S,K,r,q,sigma,t,T,n,m,Savgt,passingtime,Amer=False):
                         break
                 lowprice = (savg[n-a-1][b][i] * (n-a) + stock[n-a][b+1])/(n-a+1)
                 for k in range(m-1):
-                    if (savg[n-a][b+1][k+1] > lowprice and lowprice > savg[n-a][b+1][k]) or (lowprice == savg[n-a][b+1][k+1]):
+                    if (savg[n-a][b+1][k+1] > lowprice and lowprice > savg[n-a][b+1][k]) or (abs(lowprice - savg[n-a][b+1][k+1])< 10**-4):
                         didx = k
                         if lowprice == savg[n-a][b+1][k+1]:
                             cd = option[a][b+1][didx+1]
@@ -919,14 +922,15 @@ def AsianCall(S,K,r,q,sigma,t,T,n,m,Savgt,passingtime,Amer=False):
                             cd = (option[a][b+1][didx+1] - option[a][b+1][didx])*((lowprice-savg[n-a][b+1][didx])/(savg[n-a][b+1][didx+1]-savg[n-a][b+1][didx])) + option[a][b+1][didx]
                         break
                 if Amer:
-                    tmp.append(max(np.exp(-r*dt)*(rnp*cu+(1-rnp)*cd),savg[n-a-1][b][i]-K))
+                    tmp.append(max(np.exp(-r*t)*(rnp*cu+(1-rnp)*cd),savg[n-a-1][b][i]-K))
                 else:
-                    tmp.append(np.exp(-r*dt)*(rnp*cu+(1-rnp)*cd))
+                    tmp.append(np.exp(-r*t)*(rnp*cu+(1-rnp)*cd))
             tmp2.append(tmp)
             tmp = []
         option.append(tmp2)
         tmp2 = []
     return option[-1][0][0]
+
 
 # Principle of Financial Calculation hw5
 def SpreadOption(S1,S2,K,r,q1,q2,sigma1,sigma2,T,n,rho):
