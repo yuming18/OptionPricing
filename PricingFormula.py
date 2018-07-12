@@ -6,6 +6,8 @@ import numpy as np
 import numpy.linalg as la
 import copy
 
+print (abc)
+
 # Some math, computation and output function
 def RMSE(true, price):
     true = np.array(true)
