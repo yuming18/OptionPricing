@@ -4,12 +4,12 @@ from scipy.stats import norm, mvn, multivariate_normal
 import numpy as np
 import numpy.linalg as la
 
-def RMSE(true, price):
-    s = 0
-    for i in range(len(price)):
-        s = s + (price[i]-true[i])**2
-    rmse = s/float(len(price))
-    return rmse**0.5
+#def RMSE(true, price):
+#    s = 0
+#    for i in range(len(price)):
+#        s = s + (price[i]-true[i])**2
+#    rmse = s/float(len(price))
+#    return rmse**0.5
 
 def NormalCDF(x):
     if x > 0:
