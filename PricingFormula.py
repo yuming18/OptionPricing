@@ -1,15 +1,19 @@
 from __future__ import division
-import math
 from scipy.stats import norm, mvn, multivariate_normal
+from tqdm import tqdm
+import math
 import numpy as np
 import numpy.linalg as la
+import copy
 
-#def RMSE(true, price):
-#    s = 0
-#    for i in range(len(price)):
-#        s = s + (price[i]-true[i])**2
-#    rmse = s/float(len(price))
-#    return rmse**0.5
+print (abc)
+
+# Some math, computation and output function
+def RMSE(true, price):
+    true = np.array(true)
+    price = np.array(price)
+    n = len(price)
+    return np.sqrt(np.sum((price-ture)**2)/n)
 
 def NormalCDF(x):
     if x > 0:
@@ -20,11 +24,56 @@ def NormalCDF(x):
     else:
        return NormalCDF(-x)
 
+def PrintTree(tree):
+    for i in range(len(tree)):
+        print "No.", len(tree[i]) - 1, "period."
+        print tree[i]
+
+def CholeskyDecomposition(cov,count):
+    # Cholesky Decomposition
+    cholesky = np.zeros((count,count))
+    cholesky[0][0] = np.sqrt(cov[0][0])
+    cholesky[0,1:] = cov[0][1:]/cholesky[0,0]
+    for i in range(1,count-1):
+        tmp2 = 0
+        cholesky[i,i] = np.sqrt(cov[i,i]-np.sum(cholesky[:i,i]**2))
+        for j in range(i+1,count):
+            cholesky[i,j] = (cov[i,j]-np.sum(cholesky[0:i,i]*cholesky[0:i,j]))/cholesky[i,i]
+    cholesky[-1][-1] = np.sqrt(cov[count-1][count-1]-np.sum(cholesky[:count-1,-1]**2))
+    return cholesky
+
+def Factorial(n):
+    # return a numpy array of log 1:n
+    log = list()
+    for i in range(n):
+        log.append(np.log(i+1))
+    return np.array(log)
+
+def Combination(nFactorialList,n,j):
+    # return log(C(n,j))
+    return np.sum(nFactorialList) - np.sum(nFactorialList[:j]) - np.sum(nFactorialList[:n-j])
+
 def d1(S,K,r,q,sigma,T):
     return (np.log(S/float(K))+(r-q+(sigma**2)/2.0)*T) / (sigma*(T**0.5))
 
 def d2(S,K,r,q,sigma,T):
     return d1(S,K,r,q,sigma,T)-(sigma*(T**0.5))
+
+# Find the critical stock price of vanilla call option
+def CriticalCallPrice(S,K,r,q,sigma,T,AcceptedError=10**-6):
+    target = K
+    while((abs(BS_EuroCall(target,K,r,q,sigma,T)-K)-target)>AcceptedError):
+        delta = np.exp(-q*T)*norm.cdf(d1(target,K,r,q,sigma,T))
+        target = target - (BS_EuroCall(target,K,r,q,sigma,T)-K-target)/delta
+    return target
+
+# Find the critical stock price of vanilla put option
+def CriticalPutPrice(S,K,r,q,sigma,T,AcceptedError=10**-6):
+    target = S
+    while((abs(K-BS_EuroPut(target,K,r,q,sigma,T))-target)>AcceptedError):
+        delta = np.exp(-q*T)*(norm.cdf(d1(target,K,r,q,sigma,T)) - 1)
+        target = target - (K-BS_EuroPut(target,K,r,q,sigma,T)-target)/delta
+    return target
 
 def BS_EuroCall(S,K,r,q,sigma,T):
     D1 = d1(S,K,r,q,sigma,T)
@@ -36,32 +85,183 @@ def BS_EuroPut(S,K,r,q,sigma,T):
     D2 = d2(S,K,r,q,sigma,T)
     return K*np.exp(-r*T)*norm.cdf(-D2) - S * np.exp(-q*T) * norm.cdf(-D1)
 
-def CRR_EuroCall(S,K,r,q,sigma,T,n):
-    t = T/float(n)
-    u = np.exp(sigma*np.sqrt(t))
+def Combinatorial_VanillaEuroOption(S,K,r,q,sigma,T,n):
+    dt = T/n
+    u = np.exp(sigma*np.sqrt(dt))
     d = 1/u
-    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
-    stock = []
+    rnp = (np.exp((r-q)*dt) - d)/(u-d) # Risk Netural Probability
+
+    call = 0
+    put = 0
+    nf = Factorial(n)# return n factorial list
+
     for a in range(n+1):
-        stock.append(S*np.float_power(u,n-a)*np.float_power(d,a))
-    option = [x-K if x>K else 0 for x in stock]
+        call = call + np.exp(Combination(nf,n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(S*np.exp((n-a)*np.log(u)+a*np.log(d))-K,0)
+        put = put + np.exp(Combination(nf,n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(K-S*np.exp((n-a)*np.log(u)+a*np.log(d)),0)
+
+    call = np.exp(-r*T)*call
+    put = np.exp(-r*T)*put
+
+    return call, put
+
+def CRR_EuroCall(S,K,r,q,sigma,T,n):
+    dt = T/n
+    u = np.exp(sigma*np.sqrt(dt))
+    d = 1/u
+    rnp = (np.exp((r-q)*dt) - d)/(u-d) # Risk Netural Probability
+
+    call = 0
+    Factorialn = Factorial(n) # return a np array of log 1:n
+
+    for a in range(n+1):
+        call = call + np.exp(Combination(Factorialn,n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(S*np.exp((n-a)*np.log(u)+a*np.log(d))-K,0)
+    call = np.exp(-r*T)*call
+
+    return call
+
+def CRR_EuroPut(S,K,r,q,sigma,T,n):
+    dt = T/n
+    u = np.exp(sigma*np.sqrt(dt))
+    d = 1/u
+    rnp = (np.exp((r-q)*dt) - d)/(u-d) # Risk Netural Probability
+
+    put = 0
+    Factorialn = Factorial(n)
+
+    for a in range(n+1):
+        put = put + np.exp(Combination(Factorialn,n,a)+(n-a)*np.log(rnp)+a*np.log(1-rnp))*max(K-S*np.exp((n-a)*np.log(u)+a*np.log(d)),0)
+    put = np.exp(-r*T)*put
+
+    return put
+
+def CRR_AmerCall(S,K,r,q,sigma,T,n):
+    dt = T/n
+    u = np.exp(sigma*np.sqrt(dt))
+    d = 1/u
+    rnp = (np.exp((r-q)*dt) - d)/(u-d) # Risk Netural Probability
+
+    option = list()
+    tmp = list()
+
+    for a in range(n+1):
+        tmp.append(max(S*np.float_power(u,n-a)*np.float_power(d,a)-K,0))
+    option.append(tmp)
+
     for a in range(n):
-        for b in range(len(option)-1):
-            option[b] = np.exp(-1*r*t) * (rnp * option[b] + (1-rnp) * option[b+1])
-    return option[0]
+        tmp = []
+        for b in range(n-a):
+            EV = S*np.float_power(u,n-b-a-1)*np.float_power(d,b) - K
+            HV = np.exp(-1*r*dt)*(rnp*option[a][b]+(1-rnp)*option[a][b+1])
+            tmp.append(max(EV,HV))
+        option.append(tmp)
+
+    price = option[-1][0]
+
+    return price
+
+def CRR_AmerPut(S,K,r,q,sigma,T,n):
+    dt = T/n
+    u = np.exp(sigma*np.sqrt(dt))
+    d = 1/u
+    rnp = (np.exp((r-q)*dt) - d)/(u-d) # Risk Netural Probability
+
+    option = list()
+    tmp = list()
+
+    for a in range(n+1):
+        tmp.append(max(K-S*np.float_power(u,n-a)*np.float_power(d,a),0))
+    option.append(tmp)
+
+    for a in range(n):
+        tmp = []
+        for b in range(n-a):
+            EV = K - S*np.float_power(u,n-b-a-1)*np.float_power(d,b)
+            HV = np.exp(-1*r*dt)*(rnp*option[a][b]+(1-rnp)*option[a][b+1])
+            tmp.append(max(EV,HV))
+        option.append(tmp)
+
+    price = option[-1][0]
+
+    return price
+
+def MonteCarlo_EuroCall(S,K,r,q,sigma,T,SimulationNo=10000,RepetitionTime=20):
+    average = list()
+
+    for a in range(RepetitionTime):
+        option = list()
+        # Normal parameter
+        mean = np.log(S)+(r-q-(sigma**2/2.0))*T
+        std = sigma*np.sqrt(T)
+        stock = np.random.normal(mean, std, SimulationNo)
+
+        stock = np.exp(stock) 
+        option = np.exp(-r*T)*(np.maximum(stock-K, 0))
+        average.append(np.average(option))
+
+    mid = np.average(average)
+    L = np.average(average) - 2*np.std(average)
+    U = np.average(average) + 2*np.std(average)
+
+    return mid, L, U
+
+def MonteCarlo_EuroPut(S,K,r,q,sigma,T,SimulationNo=10000,RepetitionTime=20):
+    average = list()
+
+    for a in range(RepetitionTime):
+        option = list()
+        # Normal parameter
+        mean = np.log(S)+(r-q-(sigma**2/2.0))*T
+        std = sigma*np.sqrt(T)
+        stock = np.random.normal(mean, std, SimulationNo)
+
+        stock = np.exp(stock) 
+        option = np.exp(-r*T)*(np.maximum(K-stock, 0))
+        average.append(np.average(option))
+
+    mid = np.average(average)
+    L = np.average(average) - 2*np.std(average)
+    U = np.average(average) + 2*np.std(average)
+
+    return mid, L, U
+
+# FC hw5 basic
+def MonteCarlo_AverEuroCall(S,K,r,q,sigma,t,T,n,Savgt,passingtime=0,SimulationNo=10000,RepetitionTime=20):
+
+    option = list()
+    dt = (T-t)/n
+    passperiod = int(n*(t/(T-t)))+1
+
+    for a in range(RepetitionTime):
+        st = (np.zeros(SimulationNo)+np.log(S)).reshape(SimulationNo,1)
+        dw = np.sqrt(dt)*np.random.randn(SimulationNo,n)
+        for b in range(n):
+            st = np.concatenate((st,st[:,-1].reshape(SimulationNo,1)+(r-q-0.5*sigma**2)*dt+sigma*dw[:,b].reshape(SimulationNo,1)),axis=1)
+#            print st
+        st = np.exp(st)
+#        print st
+
+        avglist = list()
+        for row in st:
+            rowavg = (Savgt*passperiod+np.sum(row[1:]))/(passperiod+n)
+            avglist.append(rowavg)
+        avglist = np.array(avglist).reshape(SimulationNo,1)
+
+        option.append(np.average(np.exp(-r*(T-t))*np.maximum(avglist - K,0)))
+
+    mid = np.average(option)
+    L = mid - 2 * np.std(option)
+    U = mid + 2 * np.std(option)
+
+    return mid, L, U
 
 # Principle of Financial Calculation hw1
 def CallOnCall(S,K1,K2,r,q,sigma,t,T):
 
-    def FindS(S,K1,K2,r,q,sigma,T):
+    def FindS(S,K1,K2,r,q,sigma,T,AcceptedError=10**-6):
         target = S
-        AcceptedError = 0.0000001
-        premium = BS_EuroCall(target,K2,r,q,sigma,T)
-        while(abs(premium - K1) > AcceptedError):
+        while(abs(BS_EuroCall(target,K2,r,q,sigma,T) - K1) > AcceptedError):
             delta = norm.cdf(d1(target,K2,r,q,sigma,T))
-            target = target - 0.1 * (premium-K1)/delta
-            premium = BS_EuroCall(target,K2,r,q,sigma,T)
-#        print target
+            target = target - 0.1 * (BS_EuroCall(target,K2,r,q,sigma,T)-K1)/delta
         return target
 
     CriticalPrice = FindS(S,K1,K2,r,q,sigma,T-t)
@@ -94,21 +294,10 @@ def CallOnCall(S,K1,K2,r,q,sigma,t,T):
 # Principle of Financial Calculation hw2
 def BermudanPut2(S,K,r,q,sigma,T):
     
-    def FindCriticalPrice(S,K,r,q,sigma,T,AcceptedError=0.0001):
-        target = K
-        premium = BS_EuroPut(target,K,r,q,sigma,T)
-
-        # K - target is the early exercise value 
-        # premium is the holding value
-        while(abs((K - target) - premium) > AcceptedError):
-            delta = -norm.cdf(-d1(target,K,r,q,sigma,T))
-            target = target - ((K-target)-premium)/delta
-            premium = BS_EuroPut(target,K,r,q,sigma,T)
-        return target
-
+    AcceptedError = 0.0001
 
     t1 = T/2.0
-    CriticalPrice = FindCriticalPrice(S,K,r,q,sigma,t1)
+    CriticalPrice = CriticalPutPrice(S,K,r,q,sigma,t1,AcceptedError)
 #    print "Early Exercise Critical Price at T/2 is:", CriticalPrice
 
     a2 = d2(S,CriticalPrice,r,q,sigma,t1)
@@ -132,6 +321,8 @@ def BermudanPut2(S,K,r,q,sigma,T):
 # Principle of Financial Calculation hw2
 def BermudanPut3(S,K,r,q,sigma,T):
     
+    AcceptedError = 10**-6
+
     def FindTPrice(S,K,r,q,sigma,T,AcceptedError = 0.0001):
         a = AcceptedError
         b = K
@@ -144,23 +335,12 @@ def BermudanPut3(S,K,r,q,sigma,T):
             c = (a+b)/2
         return c
 
-    def Find2TPrice(S,K,r,q,sigma,T,AcceptedError = 0.0001):
-        target = K
-        premium = BS_EuroPut(target,K,r,q,sigma,T)
-#        print premium
-        while(abs((K - target) - premium) > AcceptedError):
-            premium = BS_EuroPut(target,K,r,q,sigma,T)
-            delta = -norm.cdf(-d1(target,K,r,q,sigma,T))
-            target = target - 0.1 * ((K - target) - premium)/delta
-#        print target
-        return target
-
     t1 = T/3.0
     t2 = (2*T)/3.0
 
     TPrice = FindTPrice(S,K,r,q,sigma,t2)
     print "Early Exercise Critical Price at T/3 is:", TPrice
-    T2Price = Find2TPrice(S,K,r,q,sigma,t1)
+    T2Price = CriticalPutPrice(S,K,r,q,sigma,t1,AcceptedError)
     print "Early Exercise Critical Price at 2T/3 is:", T2Price
 
     a2 = d2(S,TPrice,r,q,sigma,t1)
@@ -565,31 +745,31 @@ def MonteCarlo_CustomizedCall(S,K1,K2,K3,K4,r,q,sigma,T,SimulationNo,RepetitionT
 
 # Principle of Financial Calculation hw4
 def BBS_EuroCall(S,K,r,q,sigma,T,n):
-    t = T/n
-    u = np.exp(sigma*np.sqrt(t))
+    dt = T/n
+    u = np.exp(sigma*np.sqrt(dt))
     d = 1/u
-    rnp = (np.exp(r*t) - d)/(u-d) # Risk Netural Probability
-    leef = []
+    rnp = (np.exp((r-q)*dt) - d)/(u-d) # Risk Netural Probability
+    stock = []
     option = []
     for a in range(n):
-        leef.append(S*np.float_power(u,n-(a+1))*np.float_power(d,a))
-    for s in leef:
-        option.append(BS_EuroCall(s,K,r,q,sigma,t))
+        stock.append(S*np.float_power(u,n-(a+1))*np.float_power(d,a))
+    for s in stock:
+        option.append(BS_EuroCall(s,K,r,q,sigma,dt))
     for a in range(n-1):
-        for b in range(len(leef)-1):
-            option[b] = np.exp(-1*r*t) * (rnp * option[b] + (1-rnp) * option[b+1])
+        for b in range((n-1)-a):
+            option[b] = np.exp(-1*r*dt) * (rnp * option[b] + (1-rnp) * option[b+1])
     return option[0]
 
 def EFB_EuroCall(S,K,r,q,sigma,T,n): #Extrapolated Flexible Binomial
-    t = T/n
-    u = np.exp(sigma*np.sqrt(t))
+    dt = T/n
+    u = np.exp(sigma*np.sqrt(dt))
     d = 1/u
     ita = int(round((np.log(K/S)-n*np.log(d))/(np.log(u/d))))
-    lam = (np.log(K/S)-(2*ita-n)*sigma*np.sqrt(t))/(n*(sigma**2)*t)
+    lam = (np.log(K/S)-(2*ita-n)*sigma*np.sqrt(dt))/(n*(sigma**2)*dt)
 
-    u = np.exp(sigma*np.sqrt(t)+lam*(sigma**2)*t)
-    d = np.exp(-sigma*np.sqrt(t)+lam*(sigma**2)*t)
-    rnp = (np.exp(r*t) - d)/(u-d)
+    u = np.exp(sigma*np.sqrt(dt)+lam*(sigma**2)*dt)
+    d = np.exp(-sigma*np.sqrt(dt)+lam*(sigma**2)*dt)
+    rnp = (np.exp((r-q)*dt) - d)/(u-d)
 #    print S*np.float_power(u,ita)*np.float_power(d,n-ita)
 
     stock = []
@@ -598,18 +778,18 @@ def EFB_EuroCall(S,K,r,q,sigma,T,n): #Extrapolated Flexible Binomial
         stock.append(S*np.float_power(u,n-a)*np.float_power(d,a))
     option = [s-K if s > K else 0 for s in stock]
     for a in range(n):
-        for b in range(len(option)-1):
-            option[b] = np.exp(-1*r*t) * (rnp * option[b] + (1-rnp) * option[b+1])
+        for b in range(n-a):
+            option[b] = np.exp(-1*r*dt) * (rnp * option[b] + (1-rnp) * option[b+1])
     return option[0]
     
 def GCRRXPC_EuroCall(S,K,r,q,sigma,T,n):
-    t = T/n
+    dt = T/n
     a = (np.log(K/S))/(sigma*np.sqrt(n*T))
     lam = a + np.sqrt(a**2+1)
 
-    u = np.exp(lam*sigma*np.sqrt(t))
-    d = np.exp((-sigma*np.sqrt(t))/lam)
-    rnp = (np.exp(r*t) - d)/(u-d)
+    u = np.exp(lam*sigma*np.sqrt(dt))
+    d = np.exp((-sigma*np.sqrt(dt))/lam)
+    rnp = (np.exp((r-q)*dt) - d)/(u-d)
 
     stock = []
     option = []
@@ -617,60 +797,622 @@ def GCRRXPC_EuroCall(S,K,r,q,sigma,T,n):
         stock.append(S*np.float_power(u,n-a)*np.float_power(d,a))
     option = [s-K if s > K else 0 for s in stock]
     for a in range(n):
-        for b in range(len(option)-1):
-            option[b] = np.exp(-1*r*t) * (rnp * option[b] + (1-rnp) * option[b+1])
+        for b in range(n-a):
+            option[b] = np.exp(-1*r*dt) * (rnp * option[b] + (1-rnp) * option[b+1])
     return option[0]
 
 def LEIS_EuroCall(S,K,r,q,sigma,T,n):
-    t = T/n
+    dt = T/n
     z1 = d1(S,K,r,q,sigma,T)
     z2 = d2(S,K,r,q,sigma,T)
     p1 = 0.5+np.sqrt((0.25-0.25*np.exp(-np.square(z1/(n+(1/3)))*(n+(1/6)))))
     p2 = 0.5+np.sqrt((0.25-0.25*np.exp(-np.square(z2/(n+(1/3)))*(n+(1/6)))))
-    u = (np.exp(r*t)*p1)/p2
-    d = (np.exp(r*t)-p2*u)/(1-p2)
+    u = (np.exp(r*dt)*p1)/p2
+    d = (np.exp(r*dt)-p2*u)/(1-p2)
 
-    rnp = (np.exp(r*t) - d)/(u-d)
+    rnp = (np.exp((r-q)*dt) - d)/(u-d)
     stock = []
     option = []
     for a in range(n+1):
         stock.append(S*np.float_power(u,n-a)*np.float_power(d,a))
     option = [s-K if s > K else 0 for s in stock]
     for a in range(n):
-        for b in range(len(option)-1):
-            option[b] = np.exp(-1*r*t) * (rnp * option[b] + (1-rnp) * option[b+1])
+        for b in range(n-a):
+            option[b] = np.exp(-1*r*dt) * (rnp * option[b] + (1-rnp) * option[b+1])
     return option[0]
     
-
 def HZ_EuroCall(S,K,r,q,sigma,T,n):
     
-    def integrate(K,a,b,N):
-        x = np.linspace(a+(b-a)/(2*N), b-(b-a)/(2*N), N)
-#        x = np.linspace(a, b, N)
-        y = list()
-        for ele in x:
-            y.append(max(ele-K,0.0))
-        y = np.array(y)
-        area = np.sum(y)*(b-a)/N
+    def integrate(K,s,dx):
+        y = np.log(K/s)
+        if(y < -dx):
+            area = s*np.exp(dx)-s*np.exp(-dx)-2*dx*K
+        elif(-dx < y and y < dx):
+            area = s*np.exp(dx)-dx*K-K+y*K
+        else:
+            area = 0
         return area
 
-    t = T/n
+    dt = T/n
+    u = np.exp((r-sigma**2/2)*dt+sigma*np.sqrt(dt))
+    d = np.exp((r-sigma**2/2)*dt-sigma*np.sqrt(dt))
+    rnp = 0.5
 
-    lam = 1.1
-    u = np.exp(lam*sigma*np.sqrt(t))
-    d = np.exp((-sigma*np.sqrt(t))/lam)
-    rnp = (np.exp(r*t) - d)/(u-d)
-
-    dx = S*0.5*sigma*np.sqrt(t)*(lam+(1/lam))-S
-
+    dx = sigma*np.sqrt(dt)
     stock = []
     option = []
 
     for a in range(n+1):
         stock.append(S*np.float_power(u,n-a)*np.float_power(d,a))
-    option = [integrate(K,s-dx,s+dx,100)/(2*dx) for s in stock]
+    option = [integrate(K,s,dx)/(2*dx) for s in stock]
+
     for a in range(n):
-        for b in range(len(option)-1):
-            option[b] = np.exp(-1*r*t) * (rnp * option[b] + (1-rnp) * option[b+1])
+        for b in range(n-a):
+            option[b] = np.exp(-1*r*dt) * (rnp * option[b] + (1-rnp) * option[b+1])
     return option[0]
 
+# Principle of Financial Calculation hw5
+def AsianCall(S,K,r,q,sigma,T,n,m,Amer=True):
+    t = T/n
+    u = np.exp(sigma*np.sqrt(t))
+    d = 1/u
+    rnp = (np.exp((r-q)*t) - d)/(u-d) # Risk Netural Probability
+#    print u, d, rnp
+
+    stock = []
+    savg = list()
+    option = list()
+    tmp = list()
+    tmp2 = list()
+
+    for a in range(n+1):
+        for b in range(a+1):
+            tmp.append(S*np.float_power(u,a-b)*np.float_power(d,b))
+        stock.append(tmp)
+        tmp = []
+#    PrintTree(stock)
+
+    for a in range(n+1):
+        for b in range(a+1):
+            if a == 0:
+                avg = [stock[a][b]]*m
+            else:
+                if b == 0:
+                    avg = [(stock[a][b] + savg[-1][b][0]*a)/(a+1)]*m
+                elif b == a:
+                    avg = [(stock[a][b] + savg[-1][b-1][0]*a)/(a+1)]*m
+                else:
+                    up = (max(savg[-1][b-1])*a + stock[a][b])/(a+1)
+                    down = (min(savg[-1][b])*a + stock[a][b])/(a+1)
+                    # linear space
+                    # avg = list(np.linspace(down, up, m))
+
+                    # log space 
+                    avg = list(np.exp(np.linspace(np.log(down),np.log(up),m)))
+            tmp.append(avg)
+        savg.append(tmp)
+        tmp = []
+#    PrintTree(savg)
+
+    for a in range(n+1):
+        tmp.append([max(savg[-1][a][i]-K,0) for i in range(m)])
+    option.append(tmp)
+#    PrintTree(option)
+
+    tmp = []
+    for a in range(n):
+        for b in range(n-a):
+            for i in range(m):
+                cu = 0
+                cd = 0
+                upprice = (savg[n-a-1][b][i] * (n-a) + stock[n-a][b])/(n-a+1)
+                for j in range(m-1):
+                    if (savg[n-a][b][j+1] > upprice and upprice > savg[n-a][b][j]) or (abs(upprice - savg[n-a][b][j]) < 10**-4):
+                        uidx = j
+                        if upprice == savg[n-a][b][j]:
+                            cu = option[a][b][uidx]
+                        else:
+                            cu = (option[a][b][uidx+1] - option[a][b][uidx])*((upprice-savg[n-a][b][uidx])/(savg[n-a][b][uidx+1]-savg[n-a][b][uidx])) + option[a][b][uidx]
+                        break
+                lowprice = (savg[n-a-1][b][i] * (n-a) + stock[n-a][b+1])/(n-a+1)
+                for k in range(m-1):
+                    if (savg[n-a][b+1][k+1] > lowprice and lowprice > savg[n-a][b+1][k]) or (abs(lowprice - savg[n-a][b+1][k+1])< 10**-4):
+                        didx = k
+                        if lowprice == savg[n-a][b+1][k+1]:
+                            cd = option[a][b+1][didx+1]
+                        else:
+                            cd = (option[a][b+1][didx+1] - option[a][b+1][didx])*((lowprice-savg[n-a][b+1][didx])/(savg[n-a][b+1][didx+1]-savg[n-a][b+1][didx])) + option[a][b+1][didx]
+                        break
+                if Amer:
+                    tmp.append(max(np.exp(-r*t)*(rnp*cu+(1-rnp)*cd),savg[n-a-1][b][i]-K))
+                else:
+                    tmp.append(np.exp(-r*t)*(rnp*cu+(1-rnp)*cd))
+            tmp2.append(tmp)
+            tmp = []
+        option.append(tmp2)
+        tmp2 = []
+    return option[-1][0][0]
+
+
+# Principle of Financial Calculation hw5
+def SpreadOption(S1,S2,K,r,q1,q2,sigma1,sigma2,T,n,rho):
+    dt = T/n
+    x10 = sigma2*np.log(S1) + sigma1*np.log(S2)
+    x20 = sigma2*np.log(S1) - sigma1*np.log(S2)
+    u1 = (sigma2*(r-q1-(sigma1**2/2))+sigma1*(r-q2-(sigma2**2/2)))*dt + sigma1*sigma2*np.sqrt(2*(1+rho))*np.sqrt(dt)
+    d1 = (sigma2*(r-q1-(sigma1**2/2))+sigma1*(r-q2-(sigma2**2/2)))*dt - sigma1*sigma2*np.sqrt(2*(1+rho))*np.sqrt(dt)
+    u2 = (sigma2*(r-q1-(sigma1**2/2))-sigma1*(r-q2-(sigma2**2/2)))*dt + sigma1*sigma2*np.sqrt(2*(1-rho))*np.sqrt(dt)
+    d2 = (sigma2*(r-q1-(sigma1**2/2))-sigma1*(r-q2-(sigma2**2/2)))*dt - sigma1*sigma2*np.sqrt(2*(1-rho))*np.sqrt(dt)
+
+    x1 = list()
+    x2 = list()
+    option = list()
+
+    for a in range(n+1):
+        x1.append(x10 + (n-a)*u1 + a*d1)
+        x2.append(x20 + (n-a)*u2 + a*d2)
+
+    for a in range(n+1):
+        tmp = []
+        for b in range(n+1):
+            s1 = np.exp((x1[a]+x2[b])/(2*sigma2))
+            s2 = np.exp((x1[a]-x2[b])/(2*sigma2))
+            tmp.append(max(s1-s2-K,0))
+        option.append(tmp)
+
+    for i in range(n):
+        for a in range(n-i):
+            for b in range(n-i):
+                option[a][b] = np.exp(-r*dt)*0.25*(option[a][b]+option[a+1][b]+option[a][b+1]+option[a+1][b+1])
+
+    return option[0][0]
+
+# Financial Computation hw3
+def MaxRainbowOption(S,K,r,q,sigma,T,rho,flag=0,SimulationNo=10000,RepetitionTime=20):
+    average = list()
+    count = len(S)
+    cov = np.zeros((count,count))
+
+    for i in range(count):
+        cov[i][i] = sigma[i]**2 * T
+        for j in range(i+1,count):
+            cov[i][j] = rho[j+i-1] * sigma[i] * sigma[j] * T
+            cov[j][i] = cov[i][j]
+#    print cov, "\n"
+
+    cholesky = CholeskyDecomposition(cov,count)
+#    print cholesky, "\n"
+
+    for a in range(RepetitionTime):
+        option = []
+        tmp = []
+        # Normal parameter
+        for i in range(count):
+            # Antithetic variance and moment matching
+            if flag != 0:
+                tmp2 = np.random.normal(0, 1, SimulationNo//2)
+                tmp2 = np.append(tmp2, (-tmp2))
+                tmp2 = tmp2/np.std(tmp2)
+            else:
+                tmp2 = np.random.normal(0, 1, SimulationNo)
+            tmp.append(tmp2)
+#        print np.cov(tmp), "\n"  # print uncorrelated cov matrix
+        if flag == 2:
+            cholesky = np.matmul(la.inv(CholeskyDecomposition(np.cov(tmp),count)),cholesky)
+
+        correlatedN = np.transpose(np.matmul(np.transpose(tmp),cholesky))
+#        print np.cov(np.vstack(correlatedN)), "\n"  # print correlated matrix
+        for i in range(count):
+            mean = np.log(S[i])+(r-q[i]-(sigma[i]**2/2.0))*T
+            correlatedN[i] = np.exp(correlatedN[i] + mean)
+
+        stock = zip(*correlatedN)
+
+        for i in range(SimulationNo):
+            option.append(np.exp(-r*T)*max(max(stock[i])-K,0))
+
+        option = np.array(option)
+        average.append(np.average(option))
+
+    mid = np.average(average)
+    U = np.average(average) + 2*np.std(average)
+    L = np.average(average) - 2*np.std(average)
+
+    return mid, L, U
+
+def LookbackEuroPutMonteCarlo(S,Smax,r,q,sigma,T,n,SimulationNo=10000,RepetitionTime=20):
+
+    option = list()
+    dt = T/n
+
+    for a in range(RepetitionTime):
+        st = (np.zeros(SimulationNo)+np.log(S)).reshape(SimulationNo,1)
+        dw = np.sqrt(dt)*np.random.randn(SimulationNo,n)
+        for b in range(n):
+            st = np.concatenate((st,st[:,-1].reshape(SimulationNo,1)+(r-q-0.5*sigma**2)*dt+sigma*dw[:,b].reshape(SimulationNo,1)),axis=1)
+#            print st
+        st = np.exp(st)
+#        print st
+        path_max = np.maximum(np.apply_along_axis(np.max,1,st),Smax)
+        option.append(np.average(np.exp(-r*T)*(path_max - st[:,-1])))
+
+    mid = np.average(option)
+    U = mid + 2 * np.std(option)
+    L = mid - 2 * np.std(option)
+
+    return mid, L, U
+
+def LookbackPutCRR(S,Smax,r,q,sigma,T,n,Amer=True,bonus=0):
+    dt = T/n
+    u = np.exp(sigma*np.sqrt(dt))
+    d = 1/u
+    rnp = (np.exp((r-q)*dt) - d)/(u-d) # Risk Netural Probability
+
+    stock = list()
+    maxprice = list()
+    option = list()
+    tmp = list()
+    tmp2 = list()
+    sulist = list()
+
+    # Stock price tree
+    for a in range(n+1):
+        for b in range(a+1):
+            tmp.append(S*np.float_power(u,a-b)*np.float_power(d,b))
+        stock.append(tmp)
+        tmp = []
+#    PrintTree(stock)
+
+    # Max price tree
+    if bonus == 1:
+#        sulist = [max(Smax,S*np.float_power(u,c)) for c in range(n+1)]
+        for a in range(n+1):
+            for b in range(a+1):
+                for c in range(a-b+1):
+#                    tmp2 = sulist[:a-b]
+                    tmp2.append(max(Smax,S*np.float_power(u,c)))
+                tmp.append(tmp2)
+                tmp2 = []
+            maxprice.append(tmp)
+            tmp = []
+    else:
+        for a in range(n+1):
+            for b in range(a+1):
+                if a == 0:
+                    node_maxprice = [Smax]
+                else:
+                    if b == 0:
+                        node_maxprice = [max(Smax, stock[a][b])]
+                    elif b == a:
+                        node_maxprice = [Smax]
+                    else:
+    #                    node_maxprice = maxprice[-1][b-1] gives the pointer of a list to node_maxprice
+                        node_maxprice = maxprice[-1][b-1][:]
+                        for ele in maxprice[-1][b][:]:
+                            if(ele not in node_maxprice):
+                                node_maxprice.append(ele)
+                        # something wrong??
+    #                    if min(node_maxprice) > stock[a][b]:
+    #                        node_maxprice.append(stock[a][b])
+    #                    node_maxprice.append(stock[a][b])
+                tmp.append(node_maxprice)
+            maxprice.append(tmp)
+            tmp = []
+
+    for a in range(n+1):
+        tmp.append([max(ele-stock[-1][a],0) for ele in maxprice[-1][a]])
+    option.append(tmp)
+
+    tmp = []
+    for a in range(n):
+        for b in range(n-a):
+            for i in range(len(maxprice[n-a-1][b])):
+                upmax = max(stock[n-a][b],maxprice[n-a-1][b][i])
+                for j in range(len(maxprice[n-a][b])):
+#                    print upmax, maxprice[n-a][b][j]
+#                    print upmax == maxprice[n-a][b][j]
+                    if abs(upmax - maxprice[n-a][b][j]) < 0.0001:
+                        cu = option[a][b][j]
+                        break
+                lowmax = maxprice[n-a-1][b][i]
+                for k in range(len(maxprice[n-a][b+1])):
+                    if lowmax == maxprice[n-a][b+1][k]:
+                        cd = option[a][b+1][k]
+                        break
+                if Amer == True:
+                    tmp.append(max(np.exp(-r*dt)*(rnp*cu+(1-rnp)*cd),maxprice[n-a-1][b][i]-stock[n-a-1][b]))
+                else:
+                    tmp.append(np.exp(-r*dt)*(rnp*cu+(1-rnp)*cd))
+            tmp2.append(tmp)
+            tmp = []
+        option.append(tmp2)
+        tmp2 = []
+#    PrintTree(option)
+    
+    return option[-1][0][0]
+
+def CheukVorst1997(S,Smax,r,q1,sigma,T,n,Amer=True):
+    dt = T/n
+    u = np.exp(sigma*np.sqrt(dt))
+    d = 1/u
+#    rnp = (np.exp((r-q1)*t) - d)/(u-d) # Risk Netural Probability
+    mu = np.exp(r*dt)
+#    q = (rnp*u)/(rnp*u+(1-rnp)*d)
+    q = 1 - (mu*u-1)/(mu*(u-d)) # CV1997 risk neutral prob.
+
+    tmp = list()
+    stock = [[1]]
+    option = list()
+
+    # Stock price tree
+    for a in range(1,n+1):
+        for b in range(a+1):
+            tmp.append(np.float_power(u,a-b))
+        stock.append(tmp)
+        tmp = []
+
+    option.append([max(ele-1,0) for ele in stock[-1][:]])
+
+    for a in range(n):
+        tmp = []
+        for b in range(n-a):
+            if b == (n-a-1):
+                tmp.append((q*option[-1][b]+(1-q)*option[-1][b+1]))
+            else:
+                if Amer:
+                    tmp.append(max((q*option[-1][b]+(1-q)*option[-1][b+2]),stock[n-a-1][b]-1))
+                else:
+                    tmp.append((q*option[-1][b]+(1-q)*option[-1][b+2]))
+
+        option.append(tmp)
+
+    return option[-1][0]*S
+
+# Principle of financial computation hw7
+def LeastSquareMethodMonteCarlo(S,K,r,q,sigma,T,n=3,SimulationNo=20000,stage=2):
+    def V(X,Y):
+        XX = np.matmul(X.T,X)
+        XY = np.matmul(X.T,Y.reshape(X.shape[0],1))
+        return np.matmul(la.inv(XX),XY)
+    
+    dt = T/n
+    option = list()
+    beta = list()
+
+    # Srock price tree
+    st = (np.zeros(SimulationNo)+np.log(S)).reshape(SimulationNo,1)
+    dw = np.sqrt(dt)*np.random.randn(SimulationNo,n)
+    for b in range(n):
+        st = np.concatenate((st,st[:,-1].reshape(SimulationNo,1)+(r-q-0.5*sigma**2)*dt+sigma*dw[:,b].reshape(SimulationNo,1)),axis=1)
+    st = np.exp(st)
+
+    option = np.maximum(K-st[:,-1],0).reshape(SimulationNo,1)
+
+    for a in range(n-1):
+        ITM = list()
+        value = list()
+        
+        # Holding value function form
+        x0 = np.ones((SimulationNo,1))
+        x = st[:,n-a-1].reshape(SimulationNo,1)
+        x2 = np.square(x)
+        X = np.concatenate((x0,x,x2),axis=1)
+        
+        Y = np.exp(-r*dt)*option
+
+        reg = np.concatenate((Y,X),axis=1)
+
+        for ele in reg:
+            if K > ele[2]:
+                ITM.append(ele)
+        ITM = np.array(ITM)
+
+        beta.append(V(ITM[:,1:],ITM[:,0].reshape(ITM.shape[0],1)))
+
+        for i in range(len(X)):
+            if X[i][1] > K:
+                value.append(Y[i][0])
+            else:
+                if np.dot(X[i],beta[a]) > (K-X[i][1]):
+                    value.append(Y[i][0])
+                elif np.dot(X[i],beta[a]) < (K-X[i][1]):
+                    value.append(K-X[i][1])
+        option = np.array(value).reshape(SimulationNo,1)
+
+    Stage2Price = np.maximum(K-S,np.average(np.exp(-r*dt)*option.flatten()))
+    print "Stage2 price:", Stage2Price
+
+    if stage == 3:
+        st = (np.zeros(SimulationNo)+np.log(S)).reshape(SimulationNo,1)
+        dw = np.sqrt(dt)*np.random.randn(SimulationNo,n)
+        for b in range(n):
+            st = np.concatenate((st,st[:,-1].reshape(SimulationNo,1)+(r-q-0.5*sigma**2)*dt+sigma*dw[:,b].reshape(SimulationNo,1)),axis=1)
+        st = np.exp(st)
+    
+        option = np.maximum(K-st[:,-1],0).reshape(SimulationNo,1)
+        for a in range(n-1):
+            ITM = list()
+            value = list()
+            
+            # Holding value function form
+            x0 = np.ones((SimulationNo,1))
+            x = st[:,n-a-1].reshape(SimulationNo,1)
+            x2 = np.square(x)
+            X = np.concatenate((x0,x,x2),axis=1)
+            
+            Y = np.exp(-r*dt)*option
+
+            for i in range(len(X)):
+                if X[i][1] > K:
+                    value.append(Y[i][0])
+                else:
+                    if np.dot(X[i],beta[a]) > (K-X[i][1]):
+                        value.append(Y[i][0])
+                    elif np.dot(X[i],beta[a]) < (K-X[i][1]):
+                        value.append(K-X[i][1])
+            option = np.array(value).reshape(SimulationNo,1)
+            
+    option = np.maximum(K-S,np.average(np.exp(-r*dt)*option.flatten()))
+    if stage == 3:
+        print "Stage3 price:", option
+
+    return beta, option
+
+def IVNewton(S,K,r,q,sigma,T,p,marketprice,sigmaLeft=0,sigmaRight=1,n=0):
+    vega = (S*(T**0.5)*norm.pdf(d1(S,K,r,q,sigma,T)))/100
+    return sigma - ((p-marketprice)/vega)*0.005, sigmaLeft, sigmaRight
+
+def IVBisection(S,K,r,q,sigma,T,p,marketprice,sigmaLeft=0,sigmaRight=1,n=0):
+    if p - marketprice > 0:
+        sigmaRight = sigma
+        sigmaLeft = sigmaLeft
+    else:
+        sigmaLeft = sigma
+        sigmaRight = sigmaRight
+    return (sigmaLeft+sigmaRight)/2, sigmaLeft, sigmaRight
+
+def BSImpliedVolitility(PriceFunction,SearchFunction,S,K,r,q,T,marketprice,error=10**-4):
+    sigma = 0.2
+    sigmaLeft = 0
+    sigmaRight = 1
+    p = PriceFunction(S,K,r,q,sigma,T)
+
+    while(abs(p-marketprice) > error):
+        tmp = sigma
+        sigma, sigmaLeft, sigmaRight = SearchFunction(S,K,r,q,sigma,T,p,marketprice,sigmaLeft,sigmaRight)
+        lastSigma = tmp
+        print "Simga =", sigma
+        p = PriceFunction(S,K,r,q,sigma,T)
+    return sigma
+
+def CRRImpliedVolitility(PriceFunction,SearchFunction,S,K,r,q,T,n,marketprice,error=10**-4):
+    sigma = 0.2
+    sigmaLeft = 0
+    sigmaRight = 1
+    p = PriceFunction(S,K,r,q,sigma,T,n)
+
+    while(abs(p-marketprice) > error):
+        tmp = sigma
+        sigma, sigmaLeft, sigmaRight = SearchFunction(S,K,r,q,sigma,T,p,marketprice,sigmaLeft,sigmaRight,n)
+        lastSigma = tmp
+        print "Simga =", sigma
+        p = PriceFunction(S,K,r,q,sigma,T,n)
+    return sigma
+ 
+# FC bonus2
+def ImplicitFiniteDifference(S,K,r,q,sigma,T,Smin,Smax,m,n,Amer,Put):
+    dt = T/n
+    W = np.zeros((m-1,m+1))
+    option = np.zeros((m+1,n+1))
+
+    stock = np.linspace(Smin,Smax,m+1)
+#    print stock
+    sindex = list(stock).index(S)
+#    print sindex
+
+    if Put:
+        for i in range(m+1):
+            for j in range(n+1):
+                if i == 0:
+#                    option[i,j] = K*np.exp(-r*(n-j)*t) - stock[i]*np.exp(-q*(n-j)*t)
+                    option[i,j] = K - stock[i]
+                elif i == m:
+                    option[i,j] = 0
+                if j == n:
+                    option[i,j] = max(K - stock[i],0)
+    else:
+        for i in range(m+1):
+            for j in range(n+1):
+                if i == 0:
+                    option[i,j] = 0
+                elif i == m:
+#                    option[i,j] = stock[i]*np.exp(-q*(n-j)*t) - K*np.exp(-r*(n-j)*t)
+                    option[i,j] = stock[i] - K
+                if j == n:
+                    option[i,j] = max(stock[i]-K,0)
+#    print option
+    # W
+    for j in range(m-1):
+        a = (r-q)*0.5*(j+1)*dt-0.5*((sigma*(j+1))**2)*dt
+        b = 1 + (((sigma*(j+1))**2)+r)*dt
+        c = -(r-q)*0.5*(j+1)*dt-0.5*(sigma*(j+1))**2*dt
+        W[j,j] = a
+        W[j,j+1] = b 
+        W[j,j+2] = c
+#    print W
+    inputW = np.delete(W,0,1)
+    inputW = np.delete(inputW,-1,1)
+
+    for i in range(n):
+        Y = copy.copy(option[1:-1,-i-1].reshape(m-1,1))
+        Y[0,0] = Y[0,0] - W[0,0]*option[0,-i-2]
+        Y[-1,0] = Y[-1,0] - W[-1,-1]*option[-1,-i-2]
+        tmp = np.matmul(la.inv(inputW),Y)
+        for k in range(m-1):
+            if Amer:
+                if Put:
+                    option[k+1,n-i-1] = max(tmp[k,0],K-stock[k+1])
+                else:
+                    option[k+1,n-i-1] = max(tmp[k,0],stock[k+1]-K)
+            else:
+                option[k+1,n-i-1] = tmp[k,0]
+#    print option
+
+    return option[sindex,0]
+
+def ExplicitFiniteDifference(S,K,r,q,sigma,T,Smin,Smax,m,n,Amer,Put):
+    dt = T/n
+    W = np.zeros((m-1,m+1))
+    option = np.zeros((m+1,n+1))
+
+    stock = np.linspace(Smin,Smax,m+1)
+#    print stock
+    sindex = list(stock).index(S)
+#    print sindex
+
+    if Put:
+        for i in range(m+1):
+            for j in range(n+1):
+                if i == 0:
+#                    option[i,j] = K*np.exp(-r*(n-j)*t) - stock[i]*np.exp(-q*(n-j)*t)
+                    option[i,j] = K - stock[i]
+                elif i == m:
+                    option[i,j] = 0
+                if j == n:
+                    option[i,j] = max(K - stock[i],0)
+    else:
+        for i in range(m+1):
+            for j in range(n+1):
+                if i == 0:
+                    option[i,j] = 0
+                elif i == m:
+#                    option[i,j] = stock[i]*np.exp(-q*(n-j)*t) - K*np.exp(-r*(n-j)*t)
+                    option[i,j] = stock[i]-K
+                if j == n:
+                    option[i,j] = max(stock[i]-K,0)
+#    print option
+    # W
+    for j in range(m-1):
+        a = (-0.5*(r-q)*(j+1)*dt+0.5*((sigma*(j+1))**2)*t)/(1+r*dt)
+        b = (1-((sigma*(j+1))**2)*t)/(1+r*dt)
+        c = (0.5*(r-q)*(j+1)*dt+0.5*((sigma*(j+1))**2)*t)/(1+r*dt)
+        W[j,j] = a
+        W[j,j+1] = b 
+        W[j,j+2] = c
+#    print W
+
+    inputW = W
+
+    for i in range(n):
+        Y = copy.copy(option[:,-i-1].reshape(m+1,1))
+        tmp = np.matmul(inputW,Y)
+        for k in range(m-1):
+            if Amer:
+                if Put:
+                    option[k+1,n-i-1] = max(tmp[k,0],K-stock[k+1])
+                else:
+                    option[k+1,n-i-1] = max(tmp[k,0],stock[k+1]-K)
+            else:
+                option[k+1,n-i-1] = tmp[k,0]
+#    print option
+    return option[sindex,0]
